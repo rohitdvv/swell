@@ -18,7 +18,6 @@ import {
 import type { CampaignWithDays, CampaignDay, Daypart } from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
 import {
-  formatCurrency,
   formatCompactCurrency,
   formatNumber,
   dowShort,
@@ -47,7 +46,7 @@ export function CampaignBoard({
   initial: CampaignWithDays;
   editable?: boolean;
 }) {
-  const [campaign, setCampaign] = React.useState(initial);
+  const [campaign] = React.useState(initial);
   const [days, setDays] = React.useState<CampaignDay[]>(initial.days);
   const [paused, setPaused] = React.useState(initial.paused);
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
@@ -259,7 +258,6 @@ export function CampaignBoard({
 
       <EditModal
         day={editing}
-        campaignSlug={campaign.slug}
         brandColor={brandColor}
         onClose={() => setEditing(null)}
         onSaved={applyDayUpdate}
@@ -381,14 +379,12 @@ function DayListItem({
 
 function EditModal({
   day,
-  campaignSlug,
   brandColor,
   onClose,
   onSaved,
   editable,
 }: {
   day: CampaignDay | null;
-  campaignSlug: string;
   brandColor: string;
   onClose: () => void;
   onSaved: (d: CampaignDay) => void;

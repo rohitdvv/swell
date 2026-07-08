@@ -70,8 +70,8 @@ function normalizeDate(v: string | undefined): string | null {
   // M/D/YYYY or MM/DD/YY
   const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (m) {
-    let [, mm, dd, yy] = m;
-    if (yy.length === 2) yy = `20${yy}`;
+    const [, mm, dd, rawYy] = m;
+    const yy = rawYy.length === 2 ? `20${rawYy}` : rawYy;
     return `${yy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
   }
   const d = new Date(s);

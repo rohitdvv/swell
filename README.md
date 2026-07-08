@@ -9,6 +9,18 @@ persisted and published as a shareable public URL.
 This is the **operator side**: the Generator, the public Campaign Artifact, and the
 internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
 
+[![CI](https://github.com/rohitdvv/got60/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/got60/actions/workflows/ci.yml)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=NEXT_PUBLIC_BRAIN_PASSWORD&envDescription=Shared%20password%20for%20the%20Brain%20Console%20(e.g.%20got60))
+
+![Landing](docs/landing.png)
+
+|  |  |
+| --- | --- |
+| ![Campaign artifact](docs/artifact.png) | ![Brain Console](docs/console.png) |
+| The public campaign artifact — calendar, projected revenue, marketplace signal | The Brain Console — upload · paste · generate |
+| ![Dark mode](docs/artifact-dark.png) | ![Auto-branded creative](docs/creative-sample.png) |
+| Full light/dark theming | Auto-branded social creative, rendered per deal |
+
 ---
 
 ## The three pieces

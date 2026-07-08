@@ -23,7 +23,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Badge, Card, Field, Input, Segmented } from "@/components/ui";
 import { CampaignBoard } from "@/components/campaign-board";
 import { toast } from "@/components/toaster";
-import type { ParsedSalesSummary, BrandKit, CampaignWithDays, Campaign } from "@/lib/types";
+import type { ParsedSalesSummary, CampaignWithDays, Campaign } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
 const BRAIN_PASSWORD = process.env.NEXT_PUBLIC_BRAIN_PASSWORD || "got60";
