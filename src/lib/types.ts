@@ -1,0 +1,131 @@
+// ============================================================
+// Got60 — Domain contracts
+// ============================================================
+
+export type DayOfWeek =
+  | "Sunday"
+  | "Monday"
+  | "Tuesday"
+  | "Wednesday"
+  | "Thursday"
+  | "Friday"
+  | "Saturday";
+
+export type Daypart =
+  | "Breakfast"
+  | "Lunch"
+  | "Afternoon"
+  | "Dinner"
+  | "Late-Night";
+
+export const DAYPARTS: Daypart[] = [
+  "Breakfast",
+  "Lunch",
+  "Afternoon",
+  "Dinner",
+  "Late-Night",
+];
+
+export const DAYPART_WINDOWS: Record<Daypart, string> = {
+  Breakfast: "7:00–10:30 AM",
+  Lunch: "11:00 AM–2:00 PM",
+  Afternoon: "2:00–5:00 PM",
+  Dinner: "5:00–9:00 PM",
+  "Late-Night": "9:00 PM–1:00 AM",
+};
+
+// ---- Input A: Parsed sales ----------------------------------
+export type ParsedSalesSummary = {
+  restaurant_name: string;
+  source: "toast" | "square" | "generic";
+  date_range: { start: string; end: string; days: number };
+  total_net_sales: number;
+  guest_count: number;
+  order_count: number;
+  by_dayofweek: Record<
+    DayOfWeek,
+    { net_sales: number; orders: number; avg_check: number }
+  >;
+  by_daypart: Record<Daypart, { net_sales: number; orders: number }>;
+  top_items: Array<{ name: string; qty: number; net_sales: number }>;
+  voids: { count: number; amount: number };
+  payment_mix: Record<"credit" | "cash" | "other", number>;
+};
+
+// ---- Input B: Brand kit -------------------------------------
+export type BrandKit = {
+  source_url: string;
+  domain: string;
+  name: string;
+  logo_url: string | null;
+  primary_color: string; // hex
+  secondary_color: string; // hex
+  text_on_primary: "light" | "dark";
+  font_family: string;
+  tagline: string | null;
+  voice_summary: string; // short human description of tone
+  voice_keywords: string[];
+  voice_vector_dims: number; // embedding dimension (for the record)
+  extraction_notes: string[];
+};
+
+// ---- Input C: Marketplace signals ---------------------------
+export type MarketplaceSignals = {
+  in_marketplace: boolean;
+  saves: number;
+  favorites: number;
+  past_redemptions: number;
+  organic_demand_index: number; // 0..1, higher = more organic pull
+  neighborhood: {
+    radius_miles: number;
+    dominant_age_band: string;
+    median_basket: number;
+    consumer_density: "low" | "moderate" | "high";
+  };
+  lift_factor: number; // multiplier on historical orders
+  notes: string[];
+};
+
+// ---- Output: Campaign ---------------------------------------
+export type CampaignDay = {
+  id: string;
+  campaign_id: string;
+  day_index: number; // 0..29
+  date: string; // YYYY-MM-DD
+  dow: DayOfWeek;
+  daypart: Daypart;
+  discount_window: string; // human window e.g. "2:00–5:00 PM"
+  item: string;
+  pct_off: number;
+  projected_redemptions: number;
+  projected_revenue: number;
+  copy: string;
+  creative_url: string;
+  rationale: string; // why the brain chose this
+  edited: boolean;
+};
+
+export type Campaign = {
+  id: string;
+  restaurant_id: string;
+  slug: string; // full public slug [restaurant-slug]-[month]
+  restaurant_slug: string;
+  restaurant_name: string;
+  month: string; // e.g. "August 2026"
+  start_date: string;
+  title: string;
+  status: "draft" | "published";
+  paused: boolean;
+  projected_revenue: number;
+  projected_redemptions: number;
+  baseline_revenue: number;
+  brand: BrandKit;
+  marketplace: MarketplaceSignals;
+  sales_summary: ParsedSalesSummary;
+  strategy_notes: string[];
+  created_at: string;
+  published_at: string | null;
+};
+
+export type CampaignRecord = Omit<Campaign, "days"> & { days?: CampaignDay[] };
+export type CampaignWithDays = Campaign & { days: CampaignDay[] };
