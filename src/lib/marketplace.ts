@@ -4,7 +4,7 @@ import { seededUnit, clamp } from "./utils";
 const AGE_BANDS = ["21–29", "25–34", "28–38", "30–42", "35–48"];
 
 /**
- * Neutral signals — used when a restaurant isn't yet in the Got60
+ * Neutral signals — used when a restaurant isn't yet in the Swell
  * marketplace. Deliberately conservative so the generator leans on
  * sales history (~70/30) without breaking.
  */
@@ -22,7 +22,7 @@ export function neutralSignals(avgBasket: number): MarketplaceSignals {
       consumer_density: "moderate",
     },
     lift_factor: 1.05,
-    notes: ["Not yet in the Got60 marketplace — using neutral consumer signals."],
+    notes: ["Not yet in the Swell marketplace — using neutral consumer signals."],
   };
 }
 

@@ -107,10 +107,10 @@ function buildGradientSvg(
   <text x="80" y="${h - 200}" font-family="${font}" font-size="34" font-weight="500" fill="${fg}">“${esc(truncate(day.copy, 46))}”</text>
   <g transform="translate(80, ${h - 96})">
     <rect x="0" y="-34" width="150" height="50" rx="25" fill="${chipBg}"/>
-    <text x="26" y="0" font-family="${font}" font-size="26" font-weight="700" fill="${fg}">Got60</text>
+    <text x="26" y="0" font-family="${font}" font-size="26" font-weight="700" fill="${fg}">Swell</text>
     <circle cx="16" cy="-9" r="5" fill="${fg}"/>
   </g>
-  <text x="${w - 80}" y="${h - 62}" font-family="${font}" font-size="24" font-weight="500" fill="${fgMuted}" text-anchor="end">${esc(formatShortDate(day.date))} · 60-min flash</text>
+  <text x="${w - 80}" y="${h - 62}" font-family="${font}" font-size="24" font-weight="500" fill="${fgMuted}" text-anchor="end">${esc(formatShortDate(day.date))} · flash deal</text>
 </svg>`;
 }
 
@@ -163,9 +163,9 @@ function buildPhotoOverlaySvg(
 
   <g transform="translate(72, ${h - 66})">
     <circle cx="8" cy="-8" r="5" fill="${primary}"/>
-    <text x="24" y="0" font-family="${font}" font-size="26" font-weight="700" fill="#fff">Got60</text>
+    <text x="24" y="0" font-family="${font}" font-size="26" font-weight="700" fill="#fff">Swell</text>
   </g>
-  <text x="${w - 72}" y="${h - 66}" font-family="${font}" font-size="24" font-weight="500" fill="rgba(255,255,255,0.72)" text-anchor="end">${esc(formatShortDate(day.date))} · 60-min flash</text>
+  <text x="${w - 72}" y="${h - 66}" font-family="${font}" font-size="24" font-weight="500" fill="rgba(255,255,255,0.72)" text-anchor="end">${esc(formatShortDate(day.date))} · flash deal</text>
 </svg>`;
 }
 
@@ -188,9 +188,9 @@ async function resolveBackground(
 // ---- disk cache (survives restarts; "Vercel Blob" in prod) --
 function creativesDir(): string {
   const candidates = [
-    process.env.GOT60_CREATIVES,
+    process.env.SWELL_CREATIVES,
     path.join(process.cwd(), "data", "creatives"),
-    path.join("/tmp", "got60-creatives"),
+    path.join("/tmp", "swell-creatives"),
   ].filter(Boolean) as string[];
   for (const dir of candidates) {
     try {

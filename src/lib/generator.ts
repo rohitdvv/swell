@@ -422,7 +422,7 @@ function buildStrategyNotes(
     );
   } else {
     notes.push(
-      `Not yet in the Got60 marketplace — leaning on sales history with conservative lift until live demand data flows in.`
+      `Not yet in the Swell marketplace — leaning on sales history with conservative lift until live demand data flows in.`
     );
   }
   return notes;

@@ -15,27 +15,27 @@ import type {
 // Connection (singleton across HMR reloads)
 // ------------------------------------------------------------
 function resolveDbPath(): string {
-  const explicit = process.env.GOT60_DB;
+  const explicit = process.env.SWELL_DB;
   if (explicit) return explicit;
   const dir = path.join(process.cwd(), "data");
   try {
     fs.mkdirSync(dir, { recursive: true });
-    return path.join(dir, "got60.db");
+    return path.join(dir, "swell.db");
   } catch {
     // Read-only FS (e.g. serverless) → fall back to tmp.
-    return path.join("/tmp", "got60.db");
+    return path.join("/tmp", "swell.db");
   }
 }
 
-const g = globalThis as unknown as { __got60_db?: Database.Database };
+const g = globalThis as unknown as { __swell_db?: Database.Database };
 
 function getDb(): Database.Database {
-  if (g.__got60_db) return g.__got60_db;
+  if (g.__swell_db) return g.__swell_db;
   const db = new Database(resolveDbPath());
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   init(db);
-  g.__got60_db = db;
+  g.__swell_db = db;
   return db;
 }
 

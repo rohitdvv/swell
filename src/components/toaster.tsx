@@ -7,7 +7,7 @@ import { CheckCircle2, AlertCircle, Info } from "lucide-react";
 type Toast = { id: number; msg: string; tone: "success" | "error" | "info" };
 
 export function toast(msg: string, tone: Toast["tone"] = "success") {
-  window.dispatchEvent(new CustomEvent("got60:toast", { detail: { msg, tone } }));
+  window.dispatchEvent(new CustomEvent("swell:toast", { detail: { msg, tone } }));
 }
 
 export function Toaster() {
@@ -21,8 +21,8 @@ export function Toaster() {
       setToasts((t) => [...t, { id, ...detail }]);
       setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3600);
     };
-    window.addEventListener("got60:toast", handler);
-    return () => window.removeEventListener("got60:toast", handler);
+    window.addEventListener("swell:toast", handler);
+    return () => window.removeEventListener("swell:toast", handler);
   }, []);
 
   const icon = {

@@ -23,13 +23,13 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"),
   title: {
-    default: "Got60 — A brain that's been in the kitchen",
-    template: "%s · Got60",
+    default: "Swell — A brain that's been in the kitchen",
+    template: "%s · Swell",
   },
   description:
     "Restaurants don't need more tools. They need a brain. Upload your sales, paste your website, get a 30-day branded discount campaign — generated, not requested.",
   openGraph: {
-    title: "Got60 — A brain that's been in the kitchen",
+    title: "Swell — A brain that's been in the kitchen",
     description:
       "Upload sales history, paste your website, get a 30-day branded campaign as a shareable URL.",
     type: "website",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
 };
 
 // Prevent theme flash: honor saved preference before paint.
-const themeScript = `(function(){try{var t=localStorage.getItem('got60-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+const themeScript = `(function(){try{var t=localStorage.getItem('swell-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({
   children,

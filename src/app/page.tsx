@@ -65,7 +65,7 @@ export default function Landing() {
             </h1>
             <p className="animate-fade-up delay-2 mt-5 max-w-xl text-lg text-fg-muted text-pretty">
               Restaurants don&apos;t need more tools. Upload 30–90 days of sales, paste your
-              website, and Got60 generates a <strong className="text-fg">30-day campaign</strong> of
+              website, and Swell generates a <strong className="text-fg">30-day campaign</strong> of
               recurring, on-brand discounts — as a shareable URL. You one-tap approve.
             </p>
             <div className="animate-fade-up delay-3 mt-8 flex flex-wrap items-center gap-3">
@@ -124,7 +124,7 @@ export default function Landing() {
             tone="dim"
           />
           <CompareCard
-            name="Got60"
+            name="Swell"
             desc="Proactive. We generate the campaign; you one-tap approve. And we read both sides of the marketplace."
             tone="bright"
           />
@@ -157,7 +157,7 @@ export default function Landing() {
               icon={<Store className="size-5" />}
               step="Input C"
               title="Marketplace signal"
-              body="Live consumer demand from the Got60 app: saves, past redemptions, and the neighborhood mix within one mile."
+              body="Live consumer demand from the Swell app: saves, past redemptions, and the neighborhood mix within one mile."
             />
           </div>
 
@@ -263,7 +263,7 @@ function HeroCreative() {
             </div>
             <div className="text-sm font-semibold">Osteria Lume</div>
             <div className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-medium">
-              60-min flash
+              flash deal
             </div>
           </div>
           <div className="mt-auto">

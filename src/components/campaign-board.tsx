@@ -269,7 +269,7 @@ export function CampaignBoard({
                 ) : (
                   <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
                     <Info className="size-3.5 shrink-0 mt-0.5" />
-                    Not yet in the Got60 consumer marketplace — plan leans on sales history.
+                    Not yet in the Swell consumer marketplace — plan leans on sales history.
                   </div>
                 )}
               </Card>

@@ -1,8 +1,8 @@
-# Got60 — Operator Side
+# Swell — Operator Side
 
 > Restaurants don't need more tools. They need a brain that's been in the kitchen.
 
-Upload 30–90 days of sales, paste a website URL, and Got60 generates a **30-day
+Upload 30–90 days of sales, paste a website URL, and Swell generates a **30-day
 campaign** of recurring, on-brand discounts — with auto-branded marketing creative —
 persisted and published as a shareable public URL.
 
@@ -10,7 +10,7 @@ This is the **operator side**: the Generator, the public Campaign Artifact, and 
 internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
 
 [![CI](https://github.com/rohitdvv/got60/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/got60/actions/workflows/ci.yml)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=NEXT_PUBLIC_BRAIN_PASSWORD&envDescription=Shared%20password%20for%20the%20Brain%20Console%20(e.g.%20got60))
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=NEXT_PUBLIC_BRAIN_PASSWORD&envDescription=Shared%20password%20for%20the%20Brain%20Console%20(e.g.%20swell))
 
 ![Landing](docs/landing.png)
 
@@ -31,7 +31,7 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 | **The Generator** | `/api/generate` | The brain. Parses sales, extracts the brand kit, reads marketplace demand, composes a 30-day plan, writes copy, renders creative, persists to the DB. |
 | **Campaign Artifact** | `/c/[slug]` | The public deliverable. Calendar grid + projected revenue/redemptions + Activate + inline edit. OG/Twitter share cards. No auth. |
 
-Start at **`/`** for the landing page, or jump straight to **`/console`** (password: `got60`).
+Start at **`/`** for the landing page, or jump straight to **`/console`** (password: `swell`).
 
 ---
 
@@ -42,7 +42,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Then open `/console`, enter `got60`, and click **“Load the Osteria Lume sample”** —
+Then open `/console`, enter `swell`, and click **“Load the Osteria Lume sample”** —
 a realistic 45-day NYC trattoria export is parsed live and turned into a full campaign.
 No CSV or API key required.
 
@@ -73,7 +73,7 @@ Demand ─┼─▶ Analyst ─▶ Strategy ─▶ Copywriter ─▶ Creative �
 Every day gets its own shareable poster (`src/lib/creative.ts`, `sharp`): the day's dish
 photo (from the restaurant's own site imagery, or free [TheMealDB](https://www.themealdb.com)
 food photography) composited under a **brand-colored duotone**, with the logo, offer, window,
-caption and a Got60 badge. Drinks/edge cases fall back to a clean brand-gradient poster.
+caption and a Swell badge. Drinks/edge cases fall back to a clean brand-gradient poster.
 Posters are disk-cached and pre-warmed on generation so the gallery is instant.
 
 ## How the brain works
@@ -122,7 +122,7 @@ Everything free; no external APIs required.
 ## Environment
 
 Copy `.env.example` → `.env.local`. All values are optional — see the file for details
-(`NEXT_PUBLIC_BRAIN_PASSWORD`, optional LLM keys, `GOT60_DB`).
+(`NEXT_PUBLIC_BRAIN_PASSWORD`, optional LLM keys, `SWELL_DB`).
 
 ---
 
@@ -131,7 +131,7 @@ Copy `.env.example` → `.env.local`. All values are optional — see the file f
 The app is a standard Next.js app and builds clean (`npm run build`).
 
 - **Any always-on host** (Render / Railway / Fly free tier, or a small VPS): works as-is —
-  SQLite persists to `./data/got60.db`. Point `GOT60_DB` at a writable volume.
+  SQLite persists to `./data/swell.db`. Point `SWELL_DB` at a writable volume.
 - **Vercel**: deploys, but serverless filesystems are ephemeral, so campaigns won't persist
   across cold starts. For production, swap `src/lib/db.ts` for a free **Neon / Vercel Postgres**
   (the `repo` interface is small and DB-agnostic by design).

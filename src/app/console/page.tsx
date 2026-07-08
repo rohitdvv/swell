@@ -28,12 +28,12 @@ import { toast } from "@/components/toaster";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
-const BRAIN_PASSWORD = process.env.NEXT_PUBLIC_BRAIN_PASSWORD || "got60";
+const BRAIN_PASSWORD = process.env.NEXT_PUBLIC_BRAIN_PASSWORD || "swell";
 
 export default function ConsolePage() {
   const [unlocked, setUnlocked] = React.useState(false);
   React.useEffect(() => {
-    setUnlocked(sessionStorage.getItem("got60-brain") === "1");
+    setUnlocked(sessionStorage.getItem("swell-brain") === "1");
   }, []);
   if (!unlocked) return <Gate onUnlock={() => setUnlocked(true)} />;
   return <Console />;
@@ -45,7 +45,7 @@ function Gate({ onUnlock }: { onUnlock: () => void }) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (pw === BRAIN_PASSWORD) {
-      sessionStorage.setItem("got60-brain", "1");
+      sessionStorage.setItem("swell-brain", "1");
       onUnlock();
     } else {
       setErr(true);
@@ -85,7 +85,7 @@ function Gate({ onUnlock }: { onUnlock: () => void }) {
             </Button>
           </form>
           <p className="mt-4 text-center text-[11px] text-fg-subtle">
-            Hint for demo: <code className="rounded bg-surface-2 px-1">got60</code>
+            Hint for demo: <code className="rounded bg-surface-2 px-1">swell</code>
           </p>
         </Card>
       </motion.div>

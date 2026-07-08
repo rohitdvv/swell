@@ -7,7 +7,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
-    const saved = (localStorage.getItem("got60-theme") as "light" | "dark") || null;
+    const saved = (localStorage.getItem("swell-theme") as "light" | "dark") || null;
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     setTheme(saved ?? (prefersDark ? "dark" : "light"));
   }, []);
@@ -16,7 +16,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("got60-theme", next);
+    localStorage.setItem("swell-theme", next);
   }
 
   return (

@@ -31,7 +31,7 @@ export type OrchestrationInput = {
 };
 
 /**
- * The Got60 brain runs as a team of specialised agents coordinated on a
+ * The Swell brain runs as a team of specialised agents coordinated on a
  * shared context (blackboard). Each agent owns one responsibility and hands
  * its output to the next. Every run produces an inspectable activity trace.
  *

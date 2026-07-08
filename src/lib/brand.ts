@@ -5,7 +5,7 @@ import type { BrandKit } from "./types";
 import { seededUnit } from "./utils";
 
 const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Got60Bot/1.0 Chrome/120 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) SwellBot/1.0 Chrome/120 Safari/537.36";
 
 function normalizeUrl(input: string): string {
   let u = input.trim();
