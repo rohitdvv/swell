@@ -87,10 +87,42 @@ export type MarketplaceSignals = {
   notes: string[];
 };
 
+// ---- Real-time context (weather / events / location) --------
+export type DayWeather = {
+  tempF: number;
+  lowF: number;
+  code: number;
+  condition: string;
+  icon: string;
+  rainProb: number;
+  bucket: "cold" | "cool" | "mild" | "warm" | "hot";
+  wet: boolean;
+};
+
+export type LocalEvent = {
+  name: string;
+  type: "holiday" | "concert" | "sports" | "festival" | "event";
+  demand: "up" | "neutral";
+};
+
+export type ContextSummary = {
+  located: boolean;
+  location_label: string | null;
+  forecast_days: number;
+  rain_days: number;
+  warm_days: number;
+  cold_days: number;
+  event_days: number;
+  avg_temp_f: number | null;
+};
+
 // ---- Multi-agent orchestration trace ------------------------
 export type AgentName =
   | "Brand Agent"
   | "Demand Agent"
+  | "Location Agent"
+  | "Weather Agent"
+  | "Events Agent"
   | "Analyst Agent"
   | "Strategy Agent"
   | "Copywriter Agent"
@@ -120,6 +152,10 @@ export type CampaignDay = {
   copy: string;
   creative_url: string;
   rationale: string; // why the brain chose this
+  weather: DayWeather | null; // live forecast for this date
+  event: LocalEvent | null; // holiday / nearby event on this date
+  context_note: string | null; // how weather/events shaped this day
+  expected_covers: number; // prep / inventory hint
   edited: boolean;
 };
 
@@ -142,6 +178,8 @@ export type Campaign = {
   sales_summary: ParsedSalesSummary;
   strategy_notes: string[];
   agent_trace: AgentEvent[];
+  location: string | null; // operator-entered location string
+  context: ContextSummary | null; // live weather/events summary
   created_at: string;
   published_at: string | null;
 };

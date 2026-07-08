@@ -13,6 +13,7 @@ import type {
 import { DAYPARTS, DAYPART_WINDOWS } from "./types";
 import { generateCopyBatch, type CopyInput } from "./copy";
 import { projectDay } from "./project";
+import { EMPTY_CONTEXT, type CampaignContext } from "./context";
 import {
   addDays,
   toISODate,
@@ -63,10 +64,12 @@ export type StrategyMeta = {
   heroNames: string[];
 };
 
-export function firstOfNextMonth(): string {
-  const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return toISODate(d);
+/**
+ * Campaigns cover the *next 30 days starting today* — so the near-term days
+ * fall inside the live weather-forecast horizon (~16 days out).
+ */
+export function defaultStartDate(): string {
+  return toISODate(new Date());
 }
 
 // ============================================================
@@ -156,6 +159,27 @@ function discountBand(organic: number): [number, number] {
   return [20, 30];
 }
 
+// Item ↔ weather affinity — which dishes suit cold/wet vs warm days.
+const COMFORT_RE =
+  /(pasta|ragu|ragù|risotto|soup|zuppa|stew|braised|lasagn|gnocchi|cacio|bucatini|tagliatelle|amatriciana|carbonara|meatball|truffle|cheese|fonduta|pizza|hot|mac|polenta|parm)/i;
+const LIGHT_RE =
+  /(salad|insalata|caprese|burrata|spritz|aperol|negroni|crudo|ceviche|branzino|sea|oyster|gazpacho|sorbet|iced|cold|greens|prosecco|ros[eé]|spritz|tartare|melon|citrus|chianti|espresso)/i;
+
+function itemAffinity(name: string): "comfort" | "light" | null {
+  if (COMFORT_RE.test(name)) return "comfort";
+  if (LIGHT_RE.test(name)) return "light";
+  return null;
+}
+
+function desiredAffinity(
+  weather: CampaignContext["byDate"][string]["weather"]
+): "comfort" | "light" | null {
+  if (!weather) return null;
+  if (weather.wet || weather.bucket === "cold" || weather.bucket === "cool") return "comfort";
+  if (weather.bucket === "hot" || weather.bucket === "warm") return "light";
+  return null;
+}
+
 function pickWeighted<T>(items: T[], weights: number[], r: number): number {
   const total = weights.reduce((a, b) => a + b, 0) || 1;
   let x = r * total;
@@ -171,6 +195,7 @@ export function buildDayPlan(
   brand: BrandKit,
   marketplace: MarketplaceSignals,
   analysis: SalesAnalysis,
+  context: CampaignContext,
   opts: { startDate: string; campaignId: string }
 ): { rawDays: RawDay[]; meta: StrategyMeta } {
   const { operating, items } = analysis;
@@ -181,6 +206,9 @@ export function buildDayPlan(
     heroMode ? b.hero - a.hero : b.trial - a.trial
   );
 
+  const dataDays = Math.max(sales.date_range.days, 14);
+  const dowOccurrences = Math.max(1, Math.round(dataDays / 7));
+
   const rawDays: RawDay[] = [];
   const recentItems: string[] = [];
   let lastDaypart: Daypart | null = null;
@@ -189,6 +217,8 @@ export function buildDayPlan(
     const date = addDays(startDate, i);
     const dowFullName = dowFull(date) as DayOfWeek;
     const seed = `${campaignId}:${i}`;
+    const ctx = context.byDate[date] ?? { weather: null, event: null };
+    const desired = desiredAffinity(ctx.weather);
 
     const dpWeights = operating.map((d) => d.weight);
     const dpIdx = pickWeighted(operating, dpWeights, seededUnit(seed + ":dp"));
@@ -202,15 +232,28 @@ export function buildDayPlan(
     }
     lastDaypart = chosen.daypart;
 
-    let itemIdx = 0;
-    for (let k = 0; k < rankedItems.length; k++) {
-      const cand = rankedItems[(k + i) % rankedItems.length];
-      if (!recentItems.includes(cand.name)) {
-        itemIdx = (k + i) % rankedItems.length;
-        break;
+    // item selection — bias toward the weather-appropriate affinity,
+    // then any non-recent item, else fall back to rotation.
+    const rot = (k: number) => rankedItems[(k + i) % rankedItems.length];
+    let item = rankedItems[i % rankedItems.length];
+    if (desired) {
+      for (let k = 0; k < rankedItems.length; k++) {
+        const c = rot(k);
+        if (!recentItems.includes(c.name) && itemAffinity(c.name) === desired) {
+          item = c;
+          break;
+        }
       }
     }
-    const item = rankedItems[itemIdx];
+    if (!desired || item.name === rankedItems[i % rankedItems.length].name) {
+      for (let k = 0; k < rankedItems.length; k++) {
+        const c = rot(k);
+        if (!recentItems.includes(c.name)) {
+          item = c;
+          break;
+        }
+      }
+    }
     recentItems.push(item.name);
     if (recentItems.length > 3) recentItems.shift();
 
@@ -218,7 +261,36 @@ export function buildDayPlan(
     const isWeekend = dowFullName === "Friday" || dowFullName === "Saturday";
     const weekendTrim = isWeekend ? -3 : 0;
     const jitter = (seededUnit(seed + ":pct") - 0.5) * 6;
-    let pct = bandLo + (bandHi - bandLo) * 0.4 + slownessPush + weekendTrim + jitter;
+
+    // ---- real-time context adjustments ----
+    const notes: string[] = [];
+    let ctxDelta = 0;
+    let demandBoost = 1;
+    if (ctx.weather) {
+      const w = ctx.weather;
+      if (w.wet) {
+        ctxDelta += 5; // rain suppresses walk-ins → sweeten to pull them out
+        demandBoost *= 0.9;
+        notes.push(`${w.icon} ${w.condition} ${w.tempF}° — deeper offer + comfort pick to beat the rain`);
+      } else if (w.bucket === "cold" || w.bucket === "cool") {
+        ctxDelta += 3;
+        notes.push(`${w.icon} ${w.tempF}° — warming, hearty feature`);
+      } else if (w.bucket === "hot" || w.bucket === "warm") {
+        demandBoost *= 1.05;
+        notes.push(`${w.icon} ${w.tempF}° — bright, lighter feature for patio weather`);
+      } else {
+        notes.push(`${w.icon} ${w.condition} ${w.tempF}°`);
+      }
+    }
+    if (ctx.event) {
+      ctxDelta -= 5; // demand is already there → protect margin
+      demandBoost *= 1.18;
+      notes.push(
+        `${ctx.event.type === "holiday" ? "🎉" : "🎫"} ${ctx.event.name} nearby — protect margin, feature a hero`
+      );
+    }
+
+    let pct = bandLo + (bandHi - bandLo) * 0.4 + slownessPush + weekendTrim + jitter + ctxDelta;
     pct = clamp(Math.round(pct / 5) * 5, 10, 45);
 
     const { projected_redemptions, projected_revenue } = projectDay(
@@ -228,6 +300,12 @@ export function buildDayPlan(
       chosen.daypart,
       pct
     );
+
+    // whole-day covers for a prep / inventory hint
+    const baseCovers = (sales.by_dayofweek[dowFullName]?.orders ?? 0) / dowOccurrences;
+    const expected_covers = Math.max(0, Math.round(baseCovers * demandBoost));
+
+    const context_note = notes.length ? notes.join(" · ") : null;
 
     rawDays.push({
       id: randomUUID(),
@@ -242,6 +320,10 @@ export function buildDayPlan(
       projected_redemptions,
       projected_revenue,
       rationale: buildRationale(chosen, item, pct, marketplace, heroMode),
+      weather: ctx.weather,
+      event: ctx.event,
+      context_note,
+      expected_covers,
       edited: false,
     });
   }
@@ -290,7 +372,14 @@ export function assembleCampaign(
   marketplace: MarketplaceSignals,
   days: CampaignDay[],
   meta: StrategyMeta,
-  opts: { campaignId: string; restaurantId: string; startDate: string; trace?: AgentEvent[] }
+  context: CampaignContext,
+  opts: {
+    campaignId: string;
+    restaurantId: string;
+    startDate: string;
+    location?: string | null;
+    trace?: AgentEvent[];
+  }
 ): Campaign {
   const restaurantName = brand.name || sales.restaurant_name;
   const restaurantSlug = slugify(restaurantName);
@@ -307,6 +396,12 @@ export function assembleCampaign(
     meta.band,
     meta.heroMode
   );
+  if (context.summary.located) {
+    const s = context.summary;
+    strategy_notes.push(
+      `Reading live conditions for ${s.location_label}: ${s.forecast_days}-day forecast (avg ${s.avg_temp_f}°, ${s.rain_days} wet days) + ${s.event_days} local event day${s.event_days === 1 ? "" : "s"} — offers, items & copy adapt per day.`
+    );
+  }
 
   return {
     id: opts.campaignId,
@@ -327,6 +422,8 @@ export function assembleCampaign(
     sales_summary: sales,
     strategy_notes,
     agent_trace: opts.trace ?? [],
+    location: opts.location ?? null,
+    context: context.summary,
     created_at: new Date().toISOString(),
     published_at: null,
   };
@@ -341,13 +438,13 @@ export async function generateCampaign(
   marketplace: MarketplaceSignals,
   opts: { startDate?: string; restaurantId?: string } = {}
 ): Promise<{ campaign: Campaign; days: CampaignDay[] }> {
-  const startDate = opts.startDate ?? firstOfNextMonth();
+  const startDate = opts.startDate ?? defaultStartDate();
   const restaurantId = opts.restaurantId ?? randomUUID();
   const campaignId = randomUUID();
   const restaurantName = brand.name || sales.restaurant_name;
 
   const analysis = analyzeSales(sales);
-  const { rawDays, meta } = buildDayPlan(sales, brand, marketplace, analysis, {
+  const { rawDays, meta } = buildDayPlan(sales, brand, marketplace, analysis, EMPTY_CONTEXT, {
     startDate,
     campaignId,
   });
@@ -357,7 +454,7 @@ export async function generateCampaign(
     copy: copyResults[idx].copy,
     creative_url: `/api/creative/${d.id}.png`,
   }));
-  const campaign = assembleCampaign(sales, brand, marketplace, days, meta, {
+  const campaign = assembleCampaign(sales, brand, marketplace, days, meta, EMPTY_CONTEXT, {
     campaignId,
     restaurantId,
     startDate,

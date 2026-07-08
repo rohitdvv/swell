@@ -13,18 +13,24 @@ import {
   buildDayPlan,
   writeCopy,
   assembleCampaign,
-  firstOfNextMonth,
+  defaultStartDate,
 } from "./generator";
 import { extractBrandKit, neutralBrandKit } from "./brand";
 import { synthesizeMarketplaceSignals, neutralSignals } from "./marketplace";
 import { repo } from "./db";
-import { slugify } from "./utils";
+import { slugify, addDays } from "./utils";
+import { geocode } from "./context/geo";
+import { getForecast } from "./context/weather";
+import { getEvents } from "./context/events";
+import { buildCampaignContext, EMPTY_CONTEXT, type CampaignContext } from "./context";
+import { CAMPAIGN_LEN } from "./generator";
 
 export type OrchestrationInput = {
   sales: ParsedSalesSummary;
   brand?: BrandKit;
   url?: string;
   name?: string;
+  location?: string;
   marketplace?: "demo" | "neutral" | "auto";
   startDate?: string;
   restaurantId?: string;
@@ -55,7 +61,7 @@ export async function orchestrate(
   };
 
   const { sales } = input;
-  const startDate = input.startDate ?? firstOfNextMonth();
+  const startDate = input.startDate ?? defaultStartDate();
   const restaurantId = input.restaurantId ?? randomUUID();
   const campaignId = randomUUID();
 
@@ -101,7 +107,47 @@ export async function orchestrate(
         : `Not in marketplace — neutral signals (lift ×${m.lift_factor.toFixed(2)})`
   );
 
-  // 3 — ANALYST AGENT: z-score dayparts, score items
+  // Campaign date window (for weather + events lookups)
+  const dates = Array.from({ length: CAMPAIGN_LEN }, (_, i) => addDays(startDate, i));
+
+  // 3 — LOCATION AGENT: geocode the venue
+  const location = await track(
+    "Location Agent",
+    "Geocodes the venue to coordinates for live conditions",
+    () => (input.location ? geocode(input.location) : Promise.resolve(null)),
+    (l) => (l ? `${[l.name, l.admin1].filter(Boolean).join(", ")} (${l.lat.toFixed(2)}, ${l.lon.toFixed(2)})` : "no location provided — skipping live context")
+  );
+
+  // 4 + 5 — WEATHER + EVENTS AGENTS (parallel, real-time)
+  let context: CampaignContext = EMPTY_CONTEXT;
+  if (location) {
+    const [weather, events] = await Promise.all([
+      track(
+        "Weather Agent",
+        "Pulls the live daily forecast (Open-Meteo)",
+        () => getForecast(location.lat, location.lon),
+        (w) => {
+          const days = Object.keys(w).length;
+          const wet = Object.values(w).filter((d) => d.wet).length;
+          const avg = days ? Math.round(Object.values(w).reduce((s, d) => s + d.tempF, 0) / days) : 0;
+          return `${days}-day forecast · avg ${avg}° · ${wet} wet day${wet === 1 ? "" : "s"}`;
+        }
+      ),
+      track(
+        "Events Agent",
+        "Finds holidays & nearby events that move demand",
+        () => getEvents(location.country_code, location.lat, location.lon, dates),
+        (e) => {
+          const n = Object.keys(e).length;
+          const sample = Object.values(e)[0]?.name;
+          return n ? `${n} event day${n === 1 ? "" : "s"} in window${sample ? ` (e.g. ${sample})` : ""}` : "no events in window";
+        }
+      ),
+    ]);
+    context = buildCampaignContext(location, weather, events, dates);
+  }
+
+  // 6 — ANALYST AGENT: z-score dayparts, score items
   const analysis = await track(
     "Analyst Agent",
     "Z-scores dayparts vs your baseline, scores items by margin & mix",
@@ -112,15 +158,16 @@ export async function orchestrate(
     }
   );
 
-  // 4 — STRATEGY AGENT: assemble the 30-day plan
+  // 7 — STRATEGY AGENT: assemble the 30-day plan (weather/event-aware)
   const { rawDays, meta } = await track(
     "Strategy Agent",
-    "Composes 30 offers — item, window & discount, blended 70/30",
-    () => buildDayPlan(sales, brand, marketplace, analysis, { startDate, campaignId }),
+    "Composes 30 offers — item, window & discount, adapted to weather & events",
+    () => buildDayPlan(sales, brand, marketplace, analysis, context, { startDate, campaignId }),
     ({ rawDays, meta }) => {
       const avg = Math.round(rawDays.reduce((s, d) => s + d.pct_off, 0) / rawDays.length);
-      return `30 offers · avg ${avg}% off · ${meta.heroMode ? "urgency mode (hero items)" : "trial mode (broad items)"} · targeting ${
-        meta.slowNames.join(", ") || "all windows"
+      const adapted = rawDays.filter((d) => d.context_note).length;
+      return `30 offers · avg ${avg}% off · ${meta.heroMode ? "urgency mode (hero items)" : "trial mode (broad items)"}${
+        adapted ? ` · ${adapted} weather/event-adapted` : ""
       }`;
     }
   );
@@ -158,10 +205,11 @@ export async function orchestrate(
     "Revenue Agent",
     "Projects redemptions × lift and rolls up incremental revenue",
     () =>
-      assembleCampaign(sales, brand, marketplace, days, meta, {
+      assembleCampaign(sales, brand, marketplace, days, meta, context, {
         campaignId,
         restaurantId,
         startDate,
+        location: input.location ?? null,
         trace,
       }),
     (c) =>

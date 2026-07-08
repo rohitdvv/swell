@@ -17,7 +17,12 @@ export async function POST(request: Request) {
         const sales = summarize(fileToRows(Buffer.from(csv), "sample.csv"), meta.restaurant_name);
         return NextResponse.json({
           sales,
-          meta: { name: meta.restaurant_name, website: meta.website, filename: "osteria-lume-toast-export.csv" },
+          meta: {
+            name: meta.restaurant_name,
+            website: meta.website,
+            location: meta.location,
+            filename: "osteria-lume-toast-export.csv",
+          },
           sample: true,
         });
       }

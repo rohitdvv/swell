@@ -19,6 +19,9 @@ import {
   TrendingUp,
   Pencil,
   Images,
+  MapPin,
+  CloudSun,
+  CalendarDays,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -100,6 +103,7 @@ function Console() {
   const [salesMeta, setSalesMeta] = React.useState<{ name: string; filename: string } | null>(null);
   const [url, setUrl] = React.useState("");
   const [name, setName] = React.useState("");
+  const [location, setLocation] = React.useState("");
   const [marketplace, setMarketplace] = React.useState<"demo" | "neutral">("demo");
   const [phase, setPhase] = React.useState<Phase>("input");
   const [parsing, setParsing] = React.useState(false);
@@ -147,6 +151,7 @@ function Console() {
       setSales(data.sales);
       setSalesMeta({ name: data.meta.name, filename: data.meta.filename });
       setName(data.meta.name);
+      if (data.meta.location) setLocation(data.meta.location);
       toast("Loaded Osteria Lume sample.", "success");
     } catch {
       toast("Could not load sample.", "error");
@@ -162,7 +167,7 @@ function Console() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sales, url: url.trim(), name: name.trim(), marketplace }),
+        body: JSON.stringify({ sales, url: url.trim(), name: name.trim(), location: location.trim(), marketplace }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -200,6 +205,7 @@ function Console() {
     setSalesMeta(null);
     setUrl("");
     setName("");
+    setLocation("");
   }
 
   return (
@@ -262,6 +268,16 @@ function Console() {
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="yourrestaurant.com"
+                  />
+                </Field>
+                <Field
+                  label="Location"
+                  hint="City, neighborhood or address — powers live weather + local-event targeting."
+                >
+                  <Input
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="Greenwich Village, New York"
                   />
                 </Field>
               </div>
@@ -476,8 +492,11 @@ function SalesPreview({
 const GEN_STEPS = [
   { icon: Globe, label: "Brand Agent", sub: "logo, palette, fonts, voice & imagery" },
   { icon: Store, label: "Demand Agent", sub: "saves, redemptions, neighborhood mix" },
+  { icon: MapPin, label: "Location Agent", sub: "geocoding your venue" },
+  { icon: CloudSun, label: "Weather Agent", sub: "live 16-day forecast" },
+  { icon: CalendarDays, label: "Events Agent", sub: "holidays & nearby events" },
   { icon: FileSpreadsheet, label: "Analyst Agent", sub: "z-scoring dayparts vs your baseline" },
-  { icon: Sparkles, label: "Strategy Agent", sub: "30 offers — item, window & discount" },
+  { icon: Sparkles, label: "Strategy Agent", sub: "30 offers, adapted to weather & events" },
   { icon: Pencil, label: "Copywriter Agent", sub: "on-brand captions + guardrail" },
   { icon: Images, label: "Creative Agent", sub: "a branded poster for every day" },
   { icon: TrendingUp, label: "Revenue Agent", sub: "redemptions × lift → incremental revenue" },

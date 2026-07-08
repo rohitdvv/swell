@@ -69,6 +69,8 @@ function init(db: Database.Database) {
       baseline_revenue REAL NOT NULL DEFAULT 0,
       strategy_notes_json TEXT,
       agent_trace_json TEXT,
+      location TEXT,
+      context_json TEXT,
       brand_json TEXT,
       marketplace_json TEXT,
       sales_json TEXT,
@@ -91,6 +93,10 @@ function init(db: Database.Database) {
       copy TEXT NOT NULL,
       creative_url TEXT NOT NULL,
       rationale TEXT NOT NULL DEFAULT '',
+      weather_json TEXT,
+      event_json TEXT,
+      context_note TEXT,
+      expected_covers REAL NOT NULL DEFAULT 0,
       edited INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
     );
@@ -105,13 +111,22 @@ function init(db: Database.Database) {
   `);
 
   // Lightweight migrations for pre-existing databases.
-  for (const col of ["agent_trace_json TEXT"]) {
-    try {
-      db.exec(`ALTER TABLE campaigns ADD COLUMN ${col}`);
-    } catch {
-      /* column already exists */
+  const migrate = (table: string, cols: string[]) => {
+    for (const col of cols) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`);
+      } catch {
+        /* column already exists */
+      }
     }
-  }
+  };
+  migrate("campaigns", ["agent_trace_json TEXT", "location TEXT", "context_json TEXT"]);
+  migrate("campaign_days", [
+    "weather_json TEXT",
+    "event_json TEXT",
+    "context_note TEXT",
+    "expected_covers REAL NOT NULL DEFAULT 0",
+  ]);
 }
 
 // ------------------------------------------------------------
@@ -134,6 +149,8 @@ type CampaignRow = {
   baseline_revenue: number;
   strategy_notes_json: string | null;
   agent_trace_json: string | null;
+  location: string | null;
+  context_json: string | null;
   brand_json: string | null;
   marketplace_json: string | null;
   sales_json: string | null;
@@ -158,6 +175,8 @@ function rowToCampaign(r: CampaignRow): Campaign {
     baseline_revenue: r.baseline_revenue,
     strategy_notes: r.strategy_notes_json ? JSON.parse(r.strategy_notes_json) : [],
     agent_trace: r.agent_trace_json ? JSON.parse(r.agent_trace_json) : [],
+    location: r.location ?? null,
+    context: r.context_json ? JSON.parse(r.context_json) : null,
     brand: r.brand_json ? JSON.parse(r.brand_json) : ({} as BrandKit),
     marketplace: r.marketplace_json ? JSON.parse(r.marketplace_json) : ({} as MarketplaceSignals),
     sales_summary: r.sales_json ? JSON.parse(r.sales_json) : ({} as ParsedSalesSummary),
@@ -182,6 +201,10 @@ function rowToDay(r: Record<string, unknown>): CampaignDay {
     copy: r.copy as string,
     creative_url: r.creative_url as string,
     rationale: (r.rationale as string) ?? "",
+    weather: r.weather_json ? JSON.parse(r.weather_json as string) : null,
+    event: r.event_json ? JSON.parse(r.event_json as string) : null,
+    context_note: (r.context_note as string) ?? null,
+    expected_covers: (r.expected_covers as number) ?? 0,
     edited: !!r.edited,
   };
 }
@@ -227,20 +250,22 @@ export const repo = {
       INSERT INTO campaigns (
         id, restaurant_id, slug, restaurant_slug, restaurant_name, month, start_date, title,
         status, paused, archived, projected_revenue, projected_redemptions, baseline_revenue,
-        strategy_notes_json, agent_trace_json, brand_json, marketplace_json, sales_json, created_at, published_at
+        strategy_notes_json, agent_trace_json, location, context_json, brand_json, marketplace_json, sales_json, created_at, published_at
       ) VALUES (
         @id, @restaurant_id, @slug, @restaurant_slug, @restaurant_name, @month, @start_date, @title,
         @status, @paused, 0, @projected_revenue, @projected_redemptions, @baseline_revenue,
-        @strategy_notes_json, @agent_trace_json, @brand_json, @marketplace_json, @sales_json, @created_at, @published_at
+        @strategy_notes_json, @agent_trace_json, @location, @context_json, @brand_json, @marketplace_json, @sales_json, @created_at, @published_at
       )
     `);
     const insertDay = db.prepare(`
       INSERT INTO campaign_days (
         id, campaign_id, day_index, date, dow, daypart, discount_window, item, pct_off,
-        projected_redemptions, projected_revenue, copy, creative_url, rationale, edited
+        projected_redemptions, projected_revenue, copy, creative_url, rationale,
+        weather_json, event_json, context_note, expected_covers, edited
       ) VALUES (
         @id, @campaign_id, @day_index, @date, @dow, @daypart, @discount_window, @item, @pct_off,
-        @projected_redemptions, @projected_revenue, @copy, @creative_url, @rationale, @edited
+        @projected_redemptions, @projected_revenue, @copy, @creative_url, @rationale,
+        @weather_json, @event_json, @context_note, @expected_covers, @edited
       )
     `);
     const tx = db.transaction(() => {
@@ -262,6 +287,8 @@ export const repo = {
         baseline_revenue: campaign.baseline_revenue,
         strategy_notes_json: JSON.stringify(campaign.strategy_notes),
         agent_trace_json: JSON.stringify(campaign.agent_trace ?? []),
+        location: campaign.location ?? null,
+        context_json: campaign.context ? JSON.stringify(campaign.context) : null,
         brand_json: JSON.stringify(campaign.brand),
         marketplace_json: JSON.stringify(campaign.marketplace),
         sales_json: JSON.stringify(campaign.sales_summary),
@@ -269,7 +296,27 @@ export const repo = {
         published_at: campaign.published_at,
       });
       for (const d of days) {
-        insertDay.run({ ...d, edited: d.edited ? 1 : 0 });
+        insertDay.run({
+          id: d.id,
+          campaign_id: d.campaign_id,
+          day_index: d.day_index,
+          date: d.date,
+          dow: d.dow,
+          daypart: d.daypart,
+          discount_window: d.discount_window,
+          item: d.item,
+          pct_off: d.pct_off,
+          projected_redemptions: d.projected_redemptions,
+          projected_revenue: d.projected_revenue,
+          copy: d.copy,
+          creative_url: d.creative_url,
+          rationale: d.rationale,
+          weather_json: d.weather ? JSON.stringify(d.weather) : null,
+          event_json: d.event ? JSON.stringify(d.event) : null,
+          context_note: d.context_note ?? null,
+          expected_covers: d.expected_covers ?? 0,
+          edited: d.edited ? 1 : 0,
+        });
       }
     });
     tx();

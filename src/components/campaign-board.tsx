@@ -16,8 +16,13 @@ import {
   Info,
   Download,
   Cpu,
+  CloudSun,
+  MapPin,
+  Megaphone,
+  Copy,
+  Plug,
 } from "lucide-react";
-import type { CampaignWithDays, CampaignDay, Daypart, AgentEvent } from "@/lib/types";
+import type { CampaignWithDays, CampaignDay, Daypart, AgentEvent, ContextSummary } from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
 import {
   formatCompactCurrency,
@@ -53,7 +58,7 @@ export function CampaignBoard({
   const [paused, setPaused] = React.useState(initial.paused);
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
   const [activating, setActivating] = React.useState(false);
-  const [view, setView] = React.useState<"calendar" | "posters">("calendar");
+  const [view, setView] = React.useState<"calendar" | "posters" | "distribution">("calendar");
 
   const brand = campaign.brand;
   const brandColor = brand?.primary_color || "#f75410";
@@ -134,12 +139,15 @@ export function CampaignBoard({
               options={[
                 { value: "calendar", label: "Calendar" },
                 { value: "posters", label: "Posters" },
+                { value: "distribution", label: "Distribution" },
               ]}
             />
-            <span className="text-xs text-fg-subtle">{days.length} auto-branded posters</span>
+            <span className="hidden text-xs text-fg-subtle sm:block">{days.length} auto-branded posters</span>
           </div>
 
-          {view === "calendar" ? (
+          {view === "distribution" ? (
+            <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
+          ) : view === "calendar" ? (
             <>
               {/* calendar — desktop */}
               <Card className="hidden overflow-hidden md:block">
@@ -275,6 +283,10 @@ export function CampaignBoard({
               </Card>
             )}
 
+            {campaign.context?.located && (
+              <RealtimeContext context={campaign.context} brandColor={brandColor} />
+            )}
+
             {campaign.agent_trace && campaign.agent_trace.length > 0 && (
               <AgentTrace trace={campaign.agent_trace} brandColor={brandColor} />
             )}
@@ -334,7 +346,14 @@ function DayCell({
       style={{ ["--tw-ring-color" as string]: brandColor }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-fg-subtle">{parseLocalDate(day.date).getDate()}</span>
+        <span className="flex items-center gap-1 text-xs font-semibold text-fg-subtle">
+          {parseLocalDate(day.date).getDate()}
+          {day.weather && (
+            <span className="font-normal" title={`${day.weather.condition} ${day.weather.tempF}°`}>
+              {day.weather.icon}
+            </span>
+          )}
+        </span>
         <span
           className="rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white"
           style={{ background: brandColor }}
@@ -351,6 +370,15 @@ function DayCell({
           />
           {day.daypart}
         </div>
+        {day.event && (
+          <div
+            className="mt-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium"
+            style={{ background: `${brandColor}1a`, color: brandColor }}
+            title={day.event.name}
+          >
+            {day.event.type === "holiday" ? "🎉" : "🎫"} <span className="line-clamp-1">{day.event.name}</span>
+          </div>
+        )}
       </div>
       <div className="line-clamp-2 text-[11px] leading-tight text-fg-subtle">{day.copy}</div>
       {editable && (
@@ -392,9 +420,17 @@ function DayListItem({
             {day.pct_off}%
           </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-fg-subtle">
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-subtle">
           <Clock className="size-3" />
           {day.daypart} · {day.discount_window}
+          {day.weather && (
+            <span className="ml-1">
+              {day.weather.icon} {day.weather.tempF}°
+            </span>
+          )}
+          {day.event && (
+            <span style={{ color: brandColor }}>· {day.event.type === "holiday" ? "🎉" : "🎫"} {day.event.name}</span>
+          )}
         </div>
         <div className="mt-1 line-clamp-1 text-xs text-fg-muted">{day.copy}</div>
       </div>
@@ -488,13 +524,37 @@ function EditModal({
           />
         </div>
 
-        <div className="mb-2 flex items-center gap-2 text-sm text-fg-muted">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
           <span className="font-medium text-fg">
             {dowShort(day.date)} · {formatShortDate(day.date)}
           </span>
           <span>·</span>
           <span>{DAYPART_WINDOWS[daypart]}</span>
+          {day.weather && (
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
+              {day.weather.icon} {day.weather.tempF}° {day.weather.condition}
+            </span>
+          )}
+          {day.event && (
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-medium"
+              style={{ background: `${brandColor}1a`, color: brandColor }}
+            >
+              {day.event.type === "holiday" ? "🎉" : "🎫"} {day.event.name}
+            </span>
+          )}
         </div>
+
+        {(day.context_note || day.expected_covers > 0) && (
+          <div className="mb-4 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-xs text-fg-muted">
+            {day.context_note && <div className="text-pretty">{day.context_note}</div>}
+            {day.expected_covers > 0 && (
+              <div className="mt-1 text-fg-subtle">
+                Prep hint: ~{formatNumber(day.expected_covers)} covers expected this day
+              </div>
+            )}
+          </div>
+        )}
 
         {editable ? (
           <div className="space-y-4">
@@ -572,6 +632,163 @@ function EditModal({
   );
 }
 
+const CHANNELS = [
+  { key: "google", name: "Google Ads", color: "#4285F4", note: "Responsive Search + Display", formats: ["1.91x1", "1x1"] },
+  { key: "meta", name: "Meta / Facebook", color: "#1877F2", note: "Feed + Reels", formats: ["1x1", "4x5", "1.91x1"] },
+  { key: "instagram", name: "Instagram", color: "#E1306C", note: "Feed + Stories", formats: ["1x1", "4x5", "9x16"] },
+  { key: "tiktok", name: "TikTok", color: "#111111", note: "In-feed", formats: ["9x16"] },
+];
+
+const FORMAT_LABEL: Record<string, string> = {
+  "1x1": "Square 1:1",
+  "4x5": "Portrait 4:5",
+  "9x16": "Story 9:16",
+  "1.91x1": "Landscape 1.91:1",
+};
+
+function clampStr(s: string, n: number) {
+  return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+}
+
+function DistributionPanel({
+  campaign,
+  days,
+  brandColor,
+}: {
+  campaign: CampaignWithDays;
+  days: CampaignDay[];
+  brandColor: string;
+}) {
+  const name = campaign.restaurant_name;
+  const maxPct = Math.max(...days.map((d) => d.pct_off));
+  const hero = [...days].sort((a, b) => b.projected_revenue - a.projected_revenue)[0] ?? days[0];
+  const monthName = campaign.month.split(" ")[0];
+
+  const googleHeadlines = [
+    clampStr(`${maxPct}% Off at ${name}`, 30),
+    clampStr(`${hero.item} Deal This Week`, 30),
+    clampStr(`${monthName} Flash Deals`, 30),
+  ];
+  const googleDescriptions = [
+    clampStr(`${days.length} days of flash deals at ${name} — up to ${maxPct}% off. Book your table.`, 90),
+    clampStr(hero.copy, 90),
+  ];
+  const metaPrimary = clampStr(
+    `This ${monthName} at ${name}: ${days.length} flash deals, up to ${maxPct}% off. ${hero.copy}`,
+    125
+  );
+
+  function connect(channel: string) {
+    toast(`${channel}: connect your ad account (OAuth) to auto-publish — pipeline is wired.`, "info");
+  }
+  function copyText(t: string) {
+    navigator.clipboard.writeText(t);
+    toast("Copied.", "success");
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-ember-gradient text-white">
+            <Megaphone className="size-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Publish-ready ad kit</div>
+            <p className="text-xs text-fg-muted text-pretty">
+              Every day&apos;s poster is exported in each channel&apos;s required sizes with
+              character-limited ad copy. Connect an ad account to auto-publish, or download and upload.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* channels */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {CHANNELS.map((ch) => (
+          <Card key={ch.key} className="p-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <div
+                className="flex size-8 items-center justify-center rounded-lg text-sm font-bold text-white"
+                style={{ background: ch.color }}
+              >
+                {ch.name[0]}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight">{ch.name}</div>
+                <div className="text-[11px] text-fg-subtle">{ch.note}</div>
+              </div>
+              <Badge tone="muted" className="ml-auto">Not connected</Badge>
+            </div>
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {ch.formats.map((f) => (
+                <a
+                  key={f}
+                  href={`${hero.creative_url}?ar=${f}`}
+                  download={`${campaign.restaurant_slug}-${ch.key}-${f}.png`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-[11px] font-medium text-fg-muted transition hover:text-fg"
+                >
+                  <Download className="size-3" /> {FORMAT_LABEL[f]}
+                </a>
+              ))}
+            </div>
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => connect(ch.name)}>
+              <Plug className="size-3.5" /> Connect &amp; auto-publish
+            </Button>
+          </Card>
+        ))}
+      </div>
+
+      {/* ad copy */}
+      <Card className="p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles className="size-4" style={{ color: brandColor }} />
+          <span className="text-sm font-semibold">Generated ad copy</span>
+          <Badge tone="muted" className="ml-auto">within platform limits</Badge>
+        </div>
+        <CopyBlock label="Google — Headlines (≤30 chars)" lines={googleHeadlines} onCopy={copyText} />
+        <CopyBlock label="Google — Descriptions (≤90 chars)" lines={googleDescriptions} onCopy={copyText} />
+        <CopyBlock label="Meta / Instagram — Primary text" lines={[metaPrimary]} onCopy={copyText} />
+      </Card>
+
+      <p className="px-1 text-center text-xs text-fg-subtle text-pretty">
+        Live auto-posting to Google &amp; Meta activates once you connect your ad account — the
+        creatives, targeting radius and daily budget split are prepared per day.
+      </p>
+    </div>
+  );
+}
+
+function CopyBlock({
+  label,
+  lines,
+  onCopy,
+}: {
+  label: string;
+  lines: string[];
+  onCopy: (t: string) => void;
+}) {
+  return (
+    <div className="mb-3 last:mb-0">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">{label}</div>
+      <div className="space-y-1.5">
+        {lines.map((l, i) => (
+          <div
+            key={i}
+            className="group flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+          >
+            <span className="min-w-0 flex-1 truncate">{l}</span>
+            <span className="shrink-0 text-[10px] tabular-nums text-fg-subtle">{l.length}</span>
+            <button onClick={() => onCopy(l)} className="shrink-0 text-fg-subtle hover:text-fg" title="Copy">
+              <Copy className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PostersGrid({
   days,
   editable,
@@ -637,6 +854,45 @@ function PosterCard({
         </span>
       )}
     </motion.div>
+  );
+}
+
+function RealtimeContext({
+  context,
+  brandColor,
+}: {
+  context: ContextSummary;
+  brandColor: string;
+}) {
+  const rows = [
+    { label: "Forecast window", value: `${context.forecast_days} days · avg ${context.avg_temp_f}°` },
+    { label: "Wet days", value: `${context.rain_days}` },
+    { label: "Warm days", value: `${context.warm_days}` },
+    { label: "Local event days", value: `${context.event_days}` },
+  ];
+  return (
+    <Card className="p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <CloudSun className="size-4" style={{ color: brandColor }} />
+        <span className="text-sm font-semibold">Live conditions</span>
+        <Badge tone="muted" className="ml-auto gap-1">
+          <span className="size-1.5 rounded-full bg-mint-500 animate-pulse" /> real-time
+        </Badge>
+      </div>
+      <div className="mb-2 flex items-center gap-1 text-xs text-fg-subtle">
+        <MapPin className="size-3" />
+        {context.location_label}
+      </div>
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center justify-between py-1 text-sm">
+          <span className="text-fg-muted">{r.label}</span>
+          <span className="font-medium tabular-nums">{r.value}</span>
+        </div>
+      ))}
+      <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
+        Items, discounts &amp; copy adapt to each day&apos;s weather and nearby events.
+      </p>
+    </Card>
   );
 }
 

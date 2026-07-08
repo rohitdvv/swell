@@ -8,6 +8,7 @@ import { toISODate } from "./utils";
 
 export const SAMPLE_RESTAURANT = "Osteria Lume";
 export const SAMPLE_WEBSITE = "https://osterialume.example";
+export const SAMPLE_LOCATION = "New York";
 
 type MenuItem = {
   name: string;
@@ -72,6 +73,7 @@ function pick<T>(rand: () => number, items: T[], weights: number[]): T {
 export type SampleMeta = {
   restaurant_name: string;
   website: string;
+  location: string;
   days: number;
   start: string;
   end: string;
@@ -129,6 +131,7 @@ export function buildSampleCsv(days = 45): { csv: string; meta: SampleMeta } {
     meta: {
       restaurant_name: SAMPLE_RESTAURANT,
       website: SAMPLE_WEBSITE,
+      location: SAMPLE_LOCATION,
       days,
       start: toISODate(start),
       end: toISODate(end),

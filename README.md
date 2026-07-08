@@ -17,9 +17,9 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 |  |  |
 | --- | --- |
 | ![Campaign artifact](docs/artifact.png) | ![Poster gallery](docs/posters.png) |
-| The public campaign artifact — calendar, projected revenue, marketplace signal, **agent activity** | A poster for **every day**, auto-branded and composited over real food imagery |
-| ![Brain Console](docs/console.png) | ![Auto-branded poster](docs/creative-sample.png) |
-| The Brain Console — upload · paste · generate | One day's poster — brand duotone + logo + offer |
+| Public artifact — calendar with **live weather per day**, projected revenue, **live conditions** + **10-agent activity** | A poster for **every day**, auto-branded over real food imagery |
+| ![Distribution / ad kit](docs/distribution.png) | ![Brain Console](docs/console.png) |
+| **Distribution** — channel-ready ad kit (Google/Meta/IG/TikTok) + copy | The Brain Console — upload · paste · locate · generate |
 
 ---
 
@@ -56,18 +56,44 @@ produces an inspectable **activity trace** (shown live in the artifact sidebar):
 
 ```
 Brand ─┐
-Demand ─┼─▶ Analyst ─▶ Strategy ─▶ Copywriter ─▶ Creative ─▶ Revenue
+Demand ─┤
+Location ─▶ Weather ─┐
+                     ├─▶ Analyst ─▶ Strategy ─▶ Copywriter ─▶ Creative ─▶ Revenue
+Events ──────────────┘
 ```
 
 | Agent | Responsibility |
 |---|---|
 | **Brand Agent** | Reads the website → logo, palette, typography, voice vector, imagery |
 | **Demand Agent** | Reads live marketplace demand (saves, redemptions, neighborhood mix) |
+| **Location Agent** | Geocodes the venue to coordinates (Open-Meteo geocoding) |
+| **Weather Agent** | Pulls the **live 16-day forecast** (Open-Meteo) — real-time, no key |
+| **Events Agent** | Finds holidays + nearby ticketed events that move demand (Nager.Date; optional Ticketmaster) |
 | **Analyst Agent** | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
-| **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30 |
+| **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30, **adapted to each day's weather & events** |
 | **Copywriter Agent** | Writes one on-brand caption per day, through the claims/length guardrail |
 | **Creative Agent** | Renders a branded **poster for every day** (colors, logo, food imagery) |
 | **Revenue Agent** | Projects redemptions × lift and rolls up incremental revenue |
+
+### Real-time intelligence (live, free, no keys)
+Give Swell a **location** and three agents pull live real-world signal that reshapes the plan
+day-by-day — visible in the artifact's **Live conditions** card and the agent trace:
+
+- **Weather** (Open-Meteo, 16-day forecast): a **rainy/cool** day pushes a *comfort* dish at a
+  deeper discount; a **warm/sunny** day features *lighter/patio* fare at a protected margin.
+- **Events** (Nager.Date public holidays; Ticketmaster concerts/sports with an optional key):
+  a holiday or nearby event **protects margin** and leads with a hero item to ride the crowd.
+- Each day also carries an **inventory/prep hint** (expected covers) derived from the forecast.
+
+Everything degrades gracefully — no location, an API hiccup, or dates beyond the forecast
+horizon simply fall back to the sales-history plan.
+
+### Distribution — a publish-ready ad kit
+The **Distribution** tab turns the campaign into channel-ready ads: every poster is exported
+in each platform's required aspect ratios (**1:1**, **4:5**, **9:16**, **1.91:1**) via one
+adaptive `sharp` renderer, alongside **character-limited ad copy** (Google RSA headlines ≤30 /
+descriptions ≤90, Meta primary text). Connect a Google/Meta ad account to auto-publish
+(OAuth pipeline scaffolded), or download and upload.
 
 ### Auto-branded posters
 Every day gets its own shareable poster (`src/lib/creative.ts`, `sharp`): the day's dish
@@ -138,6 +164,19 @@ The app is a standard Next.js app and builds clean (`npm run build`).
 
 > Note: `better-sqlite3` and `sharp` are native modules. On CI/hosts that gate install
 > scripts, allow them so prebuilt binaries download (the host's “allow build scripts” toggle).
+
+### Going live (enterprise) — what needs *your* accounts
+The app is built so these plug in without rework; they're gated on credentials/legal setup,
+not code:
+
+- **Live ad auto-posting** — the Distribution kit is publish-ready; flipping on real posting to
+  **Google/Meta Ads** requires your verified ad accounts + OAuth + ad-spend authorization.
+- **Subscriptions / multi-tenant** — wire **Stripe** (test-mode works with a test key) for plans,
+  seats and usage metering.
+- **Persistence at scale** — swap `src/lib/db.ts` for **Neon / Vercel Postgres** (free tier); the
+  `repo` interface is deliberately small and DB-agnostic.
+- **Richer events** — set `TICKETMASTER_API_KEY` (free tier) to layer real concerts/sports on top
+  of public holidays.
 
 ---
 

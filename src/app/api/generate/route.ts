@@ -21,6 +21,7 @@ export async function POST(request: Request) {
       brand: body?.brand,
       url: body?.url,
       name: body?.name,
+      location: body?.location,
       marketplace: body?.marketplace || "auto",
       startDate: body?.startDate,
     });
