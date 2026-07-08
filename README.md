@@ -145,6 +145,19 @@ Everything free; no external APIs required.
 
 ---
 
+## Subscriptions (`/pricing`, `/account`)
+
+Swell ships with a working subscription layer — **Starter / Pro / Agency**, monthly or
+annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-label).
+
+- **Checkout** uses **Stripe** (`src/lib/billing/*`). A Stripe **test key** runs real
+  Checkout with no real charges; prices are created inline so no dashboard setup is needed.
+- **No key? Demo mode.** The flow still works end-to-end — it activates a demo subscription
+  against the entered email so you can see the paywall, account page, usage metering and plan
+  gating without any setup.
+- Sessions are a signed, http-only cookie (email-keyed account); Stripe webhooks keep the
+  subscription lifecycle in sync (`/api/stripe/webhook`).
+
 ## Environment
 
 Copy `.env.example` → `.env.local`. All values are optional — see the file for details

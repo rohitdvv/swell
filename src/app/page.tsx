@@ -41,6 +41,9 @@ export default function Landing() {
             <a href="#moat" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
               The moat
             </a>
+            <Link href="/pricing" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+              Pricing
+            </Link>
             <ThemeToggle />
             <Link
               href="/console"

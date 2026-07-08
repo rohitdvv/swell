@@ -87,6 +87,18 @@ export type MarketplaceSignals = {
   notes: string[];
 };
 
+// ---- Billing / subscriptions --------------------------------
+export type Subscription = {
+  email: string;
+  plan: "starter" | "pro" | "agency";
+  interval: "monthly" | "annual";
+  status: "active" | "trialing" | "past_due" | "canceled";
+  mode: "live" | "demo";
+  current_period_end: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+};
+
 // ---- Real-time context (weather / events / location) --------
 export type DayWeather = {
   tempF: number;

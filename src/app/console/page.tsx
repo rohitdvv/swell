@@ -222,6 +222,9 @@ function Console() {
                 <RotateCcw className="size-3.5" /> New
               </Button>
             )}
+            <Link href="/account" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+              Account
+            </Link>
             <ThemeToggle />
           </div>
         </div>

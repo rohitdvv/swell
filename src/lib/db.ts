@@ -9,6 +9,7 @@ import type {
   BrandKit,
   MarketplaceSignals,
   ParsedSalesSummary,
+  Subscription,
 } from "./types";
 
 // ------------------------------------------------------------
@@ -107,6 +108,20 @@ function init(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
       json TEXT NOT NULL
+    );
+
+    -- subscription billing (email-keyed account)
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      email TEXT PRIMARY KEY,
+      plan TEXT NOT NULL,
+      interval TEXT NOT NULL DEFAULT 'monthly',
+      status TEXT NOT NULL DEFAULT 'active',
+      mode TEXT NOT NULL DEFAULT 'demo',
+      current_period_end TEXT,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
 
@@ -435,6 +450,55 @@ export const repo = {
          ON CONFLICT(restaurant_key) DO UPDATE SET json=excluded.json`
       )
       .run(key, JSON.stringify(signal));
+  },
+
+  // ---- subscriptions ----
+  getSubscription(email: string): Subscription | null {
+    const row = getDb()
+      .prepare(`SELECT * FROM subscriptions WHERE email = ?`)
+      .get(email.toLowerCase()) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      email: row.email as string,
+      plan: row.plan as Subscription["plan"],
+      interval: row.interval as Subscription["interval"],
+      status: row.status as Subscription["status"],
+      mode: row.mode as Subscription["mode"],
+      current_period_end: (row.current_period_end as string) ?? null,
+      stripe_customer_id: (row.stripe_customer_id as string) ?? null,
+      stripe_subscription_id: (row.stripe_subscription_id as string) ?? null,
+    };
+  },
+
+  upsertSubscription(sub: Subscription) {
+    const now = new Date().toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO subscriptions
+          (email, plan, interval, status, mode, current_period_end, stripe_customer_id, stripe_subscription_id, created_at, updated_at)
+         VALUES (@email, @plan, @interval, @status, @mode, @current_period_end, @stripe_customer_id, @stripe_subscription_id, @now, @now)
+         ON CONFLICT(email) DO UPDATE SET
+           plan=excluded.plan, interval=excluded.interval, status=excluded.status, mode=excluded.mode,
+           current_period_end=excluded.current_period_end, stripe_customer_id=excluded.stripe_customer_id,
+           stripe_subscription_id=excluded.stripe_subscription_id, updated_at=excluded.updated_at`
+      )
+      .run({ ...sub, email: sub.email.toLowerCase(), now });
+  },
+
+  getSubscriptionByStripeId(subId: string): Subscription | null {
+    const row = getDb()
+      .prepare(`SELECT email FROM subscriptions WHERE stripe_subscription_id = ?`)
+      .get(subId) as { email: string } | undefined;
+    return row ? this.getSubscription(row.email) : null;
+  },
+
+  /** Campaigns created in the current calendar month (usage metering). */
+  countCampaignsThisMonth(): number {
+    const prefix = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const row = getDb()
+      .prepare(`SELECT COUNT(*) c FROM campaigns WHERE substr(created_at,1,7) = ?`)
+      .get(prefix) as { c: number };
+    return row.c;
   },
 };
 
