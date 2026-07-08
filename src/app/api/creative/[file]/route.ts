@@ -1,5 +1,5 @@
 import { repo } from "@/lib/db";
-import { renderCreativePng } from "@/lib/creative";
+import { getCreativePng, renderCreativePng } from "@/lib/creative";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,11 +17,13 @@ export async function GET(
 
   // Optional aspect: ?og=1 → 1200x630 for share cards
   const url = new URL(request.url);
-  const size = url.searchParams.get("og")
-    ? { w: 1200, h: 630 }
-    : { w: 1080, h: 1350 };
+  const isOg = !!url.searchParams.get("og");
+  const size = isOg ? { w: 1200, h: 630 } : { w: 1080, h: 1350 };
 
-  const png = await renderCreativePng(day, campaign, size);
+  // OG cards vary less and are one-off → render fresh; day posters are cached.
+  const png = isOg
+    ? await renderCreativePng(day, campaign, size)
+    : await getCreativePng(day, campaign, size);
   return new Response(new Uint8Array(png), {
     headers: {
       "content-type": "image/png",

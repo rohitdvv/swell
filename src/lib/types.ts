@@ -58,6 +58,7 @@ export type BrandKit = {
   domain: string;
   name: string;
   logo_url: string | null;
+  image_urls: string[]; // scraped hero / gallery imagery for poster backgrounds
   primary_color: string; // hex
   secondary_color: string; // hex
   text_on_primary: "light" | "dark";
@@ -84,6 +85,23 @@ export type MarketplaceSignals = {
   };
   lift_factor: number; // multiplier on historical orders
   notes: string[];
+};
+
+// ---- Multi-agent orchestration trace ------------------------
+export type AgentName =
+  | "Brand Agent"
+  | "Demand Agent"
+  | "Analyst Agent"
+  | "Strategy Agent"
+  | "Copywriter Agent"
+  | "Creative Agent"
+  | "Revenue Agent";
+
+export type AgentEvent = {
+  agent: AgentName;
+  role: string;
+  detail: string;
+  ms: number;
 };
 
 // ---- Output: Campaign ---------------------------------------
@@ -123,6 +141,7 @@ export type Campaign = {
   marketplace: MarketplaceSignals;
   sales_summary: ParsedSalesSummary;
   strategy_notes: string[];
+  agent_trace: AgentEvent[];
   created_at: string;
   published_at: string | null;
 };

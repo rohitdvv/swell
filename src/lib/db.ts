@@ -68,6 +68,7 @@ function init(db: Database.Database) {
       projected_redemptions REAL NOT NULL DEFAULT 0,
       baseline_revenue REAL NOT NULL DEFAULT 0,
       strategy_notes_json TEXT,
+      agent_trace_json TEXT,
       brand_json TEXT,
       marketplace_json TEXT,
       sales_json TEXT,
@@ -102,6 +103,15 @@ function init(db: Database.Database) {
       json TEXT NOT NULL
     );
   `);
+
+  // Lightweight migrations for pre-existing databases.
+  for (const col of ["agent_trace_json TEXT"]) {
+    try {
+      db.exec(`ALTER TABLE campaigns ADD COLUMN ${col}`);
+    } catch {
+      /* column already exists */
+    }
+  }
 }
 
 // ------------------------------------------------------------
@@ -123,6 +133,7 @@ type CampaignRow = {
   projected_redemptions: number;
   baseline_revenue: number;
   strategy_notes_json: string | null;
+  agent_trace_json: string | null;
   brand_json: string | null;
   marketplace_json: string | null;
   sales_json: string | null;
@@ -146,6 +157,7 @@ function rowToCampaign(r: CampaignRow): Campaign {
     projected_redemptions: r.projected_redemptions,
     baseline_revenue: r.baseline_revenue,
     strategy_notes: r.strategy_notes_json ? JSON.parse(r.strategy_notes_json) : [],
+    agent_trace: r.agent_trace_json ? JSON.parse(r.agent_trace_json) : [],
     brand: r.brand_json ? JSON.parse(r.brand_json) : ({} as BrandKit),
     marketplace: r.marketplace_json ? JSON.parse(r.marketplace_json) : ({} as MarketplaceSignals),
     sales_summary: r.sales_json ? JSON.parse(r.sales_json) : ({} as ParsedSalesSummary),
@@ -215,11 +227,11 @@ export const repo = {
       INSERT INTO campaigns (
         id, restaurant_id, slug, restaurant_slug, restaurant_name, month, start_date, title,
         status, paused, archived, projected_revenue, projected_redemptions, baseline_revenue,
-        strategy_notes_json, brand_json, marketplace_json, sales_json, created_at, published_at
+        strategy_notes_json, agent_trace_json, brand_json, marketplace_json, sales_json, created_at, published_at
       ) VALUES (
         @id, @restaurant_id, @slug, @restaurant_slug, @restaurant_name, @month, @start_date, @title,
         @status, @paused, 0, @projected_revenue, @projected_redemptions, @baseline_revenue,
-        @strategy_notes_json, @brand_json, @marketplace_json, @sales_json, @created_at, @published_at
+        @strategy_notes_json, @agent_trace_json, @brand_json, @marketplace_json, @sales_json, @created_at, @published_at
       )
     `);
     const insertDay = db.prepare(`
@@ -249,6 +261,7 @@ export const repo = {
         projected_redemptions: campaign.projected_redemptions,
         baseline_revenue: campaign.baseline_revenue,
         strategy_notes_json: JSON.stringify(campaign.strategy_notes),
+        agent_trace_json: JSON.stringify(campaign.agent_trace ?? []),
         brand_json: JSON.stringify(campaign.brand),
         marketplace_json: JSON.stringify(campaign.marketplace),
         sales_json: JSON.stringify(campaign.sales_summary),

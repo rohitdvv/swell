@@ -16,10 +16,10 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 
 |  |  |
 | --- | --- |
-| ![Campaign artifact](docs/artifact.png) | ![Brain Console](docs/console.png) |
-| The public campaign artifact — calendar, projected revenue, marketplace signal | The Brain Console — upload · paste · generate |
-| ![Dark mode](docs/artifact-dark.png) | ![Auto-branded creative](docs/creative-sample.png) |
-| Full light/dark theming | Auto-branded social creative, rendered per deal |
+| ![Campaign artifact](docs/artifact.png) | ![Poster gallery](docs/posters.png) |
+| The public campaign artifact — calendar, projected revenue, marketplace signal, **agent activity** | A poster for **every day**, auto-branded and composited over real food imagery |
+| ![Brain Console](docs/console.png) | ![Auto-branded poster](docs/creative-sample.png) |
+| The Brain Console — upload · paste · generate | One day's poster — brand duotone + logo + offer |
 
 ---
 
@@ -48,9 +48,37 @@ No CSV or API key required.
 
 ---
 
+## The brain is a team of agents
+
+The generator runs as a **multi-agent orchestration** (`src/lib/orchestrator.ts`) — each
+agent owns one job, hands its output to the next on a shared context, and every run
+produces an inspectable **activity trace** (shown live in the artifact sidebar):
+
+```
+Brand ─┐
+Demand ─┼─▶ Analyst ─▶ Strategy ─▶ Copywriter ─▶ Creative ─▶ Revenue
+```
+
+| Agent | Responsibility |
+|---|---|
+| **Brand Agent** | Reads the website → logo, palette, typography, voice vector, imagery |
+| **Demand Agent** | Reads live marketplace demand (saves, redemptions, neighborhood mix) |
+| **Analyst Agent** | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
+| **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30 |
+| **Copywriter Agent** | Writes one on-brand caption per day, through the claims/length guardrail |
+| **Creative Agent** | Renders a branded **poster for every day** (colors, logo, food imagery) |
+| **Revenue Agent** | Projects redemptions × lift and rolls up incremental revenue |
+
+### Auto-branded posters
+Every day gets its own shareable poster (`src/lib/creative.ts`, `sharp`): the day's dish
+photo (from the restaurant's own site imagery, or free [TheMealDB](https://www.themealdb.com)
+food photography) composited under a **brand-colored duotone**, with the logo, offer, window,
+caption and a Got60 badge. Drinks/edge cases fall back to a clean brand-gradient poster.
+Posters are disk-cached and pre-warmed on generation so the gallery is instant.
+
 ## How the brain works
 
-Three inputs → one campaign (`src/lib/generator.ts`):
+Three inputs → one campaign:
 
 1. **Sales history** (`csv.ts`) — a flexible parser for Toast / Square transaction exports
    (CSV or XLSX). Derives net sales by daypart & day-of-week, top items, voids and payment
@@ -124,8 +152,12 @@ src/
     api/…                       parse-csv, brand-kit, generate,
                                 campaigns, campaign-days, creative, sample-csv
   lib/
-    csv.ts brand.ts marketplace.ts generator.ts project.ts
-    copy.ts creative.ts db.ts sample.ts types.ts utils.ts
+    orchestrator.ts          ← multi-agent pipeline + activity trace
+    generator.ts project.ts  ← Analyst / Strategy / Revenue phases
+    brand.ts marketplace.ts  ← Brand / Demand agents
+    copy.ts                  ← Copywriter agent + guardrail
+    creative.ts food-images.ts ← Creative agent (posters)
+    csv.ts db.ts sample.ts types.ts utils.ts
   components/
     campaign-board.tsx  ui.tsx  modal.tsx  toaster.tsx  logo.tsx  theme-toggle.tsx
 ```

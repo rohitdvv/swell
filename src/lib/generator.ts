@@ -8,6 +8,7 @@ import type {
   CampaignDay,
   Daypart,
   DayOfWeek,
+  AgentEvent,
 } from "./types";
 import { DAYPARTS, DAYPART_WINDOWS } from "./types";
 import { generateCopyBatch, type CopyInput } from "./copy";
@@ -24,9 +25,9 @@ import {
   slugify,
 } from "./utils";
 
-const CAMPAIGN_LEN = 30;
+export const CAMPAIGN_LEN = 30;
 
-type ItemScore = {
+export type ItemScore = {
   name: string;
   qty: number;
   net: number;
@@ -36,12 +37,41 @@ type ItemScore = {
   trial: number; // 0..1 broad-appeal score
 };
 
-function firstOfNextMonth(): string {
+export type DaypartAnalysis = {
+  daypart: Daypart;
+  net: number;
+  orders: number;
+  z: number;
+  slowness: number; // higher = slower vs peers
+  operating: boolean;
+  weight: number; // scheduling weight
+};
+
+export type SalesAnalysis = {
+  daypartAnalysis: DaypartAnalysis[];
+  operating: DaypartAnalysis[];
+  items: ItemScore[];
+};
+
+export type RawDay = Omit<CampaignDay, "copy" | "creative_url">;
+
+export type StrategyMeta = {
+  band: [number, number];
+  heroMode: boolean;
+  rankedItems: ItemScore[];
+  slowNames: Daypart[];
+  heroNames: string[];
+};
+
+export function firstOfNextMonth(): string {
   const now = new Date();
   const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return toISODate(d);
 }
 
+// ============================================================
+// ANALYST — z-score dayparts + score items
+// ============================================================
 function scoreItems(sales: ParsedSalesSummary): ItemScore[] {
   const items = sales.top_items.filter((i) => i.qty > 0 && i.net_sales > 0);
   if (items.length === 0) {
@@ -74,23 +104,11 @@ function scoreItems(sales: ParsedSalesSummary): ItemScore[] {
       net: i.net_sales,
       price,
       pmix,
-      // hero = premium + still meaningful volume (high margin per plate)
       hero: clamp(0.65 * priceNorm + 0.35 * qtyNorm, 0, 1),
-      // trial = broad appeal (high PMIX, mid price)
       trial: clamp(0.7 * qtyNorm + 0.3 * (1 - Math.abs(priceNorm - 0.5) * 2), 0, 1),
     };
   });
 }
-
-type DaypartAnalysis = {
-  daypart: Daypart;
-  net: number;
-  orders: number;
-  z: number;
-  slowness: number; // higher = slower vs peers
-  operating: boolean;
-  weight: number; // scheduling weight
-};
 
 function analyzeDayparts(sales: ParsedSalesSummary, totalOrders: number): DaypartAnalysis[] {
   const rows = DAYPARTS.map((dp) => ({
@@ -114,15 +132,27 @@ function analyzeDayparts(sales: ParsedSalesSummary, totalOrders: number): Daypar
       z: Math.round(z * 100) / 100,
       slowness,
       operating: isOp,
-      // slower dayparts get more promo slots (softmax-ish, floor so peaks still appear)
       weight: isOp ? Math.exp(slowness * 0.9) : 0,
     };
   });
 }
 
+export function analyzeSales(sales: ParsedSalesSummary): SalesAnalysis {
+  const totalOrders = sales.order_count || 1;
+  const daypartAnalysis = analyzeDayparts(sales, totalOrders);
+  return {
+    daypartAnalysis,
+    operating: daypartAnalysis.filter((d) => d.operating),
+    items: scoreItems(sales),
+  };
+}
+
+// ============================================================
+// STRATEGY — assemble the 30-day plan
+// ============================================================
 function discountBand(organic: number): [number, number] {
-  if (organic > 0.6) return [15, 25]; // high pull → drive trial, protect margin
-  if (organic < 0.42) return [25, 40]; // soft pull → urgency
+  if (organic > 0.6) return [15, 25];
+  if (organic < 0.42) return [25, 40];
   return [20, 30];
 }
 
@@ -136,34 +166,22 @@ function pickWeighted<T>(items: T[], weights: number[], r: number): number {
   return items.length - 1;
 }
 
-export async function generateCampaign(
+export function buildDayPlan(
   sales: ParsedSalesSummary,
   brand: BrandKit,
   marketplace: MarketplaceSignals,
-  opts: { startDate?: string; restaurantId?: string } = {}
-): Promise<{ campaign: Campaign; days: CampaignDay[] }> {
-  const restaurantName = brand.name || sales.restaurant_name;
-  const restaurantSlug = slugify(restaurantName);
-  const startDate = opts.startDate ?? firstOfNextMonth();
-  const restaurantId = opts.restaurantId ?? randomUUID();
-  const campaignId = randomUUID();
-
-  const totalOrders = sales.order_count || 1;
-  const dataDays = Math.max(sales.date_range.days, 14);
-
-  const daypartAnalysis = analyzeDayparts(sales, totalOrders);
-  const operating = daypartAnalysis.filter((d) => d.operating);
-  const items = scoreItems(sales);
+  analysis: SalesAnalysis,
+  opts: { startDate: string; campaignId: string }
+): { rawDays: RawDay[]; meta: StrategyMeta } {
+  const { operating, items } = analysis;
+  const { startDate, campaignId } = opts;
   const [bandLo, bandHi] = discountBand(marketplace.organic_demand_index);
   const heroMode = marketplace.organic_demand_index < 0.42;
-
-  // Ranked item candidates: heroes-first if urgency mode, else broad-appeal first.
   const rankedItems = [...items].sort((a, b) =>
     heroMode ? b.hero - a.hero : b.trial - a.trial
   );
 
-  // ---- assemble 30 days ----
-  const rawDays: Array<Omit<CampaignDay, "copy" | "creative_url">> = [];
+  const rawDays: RawDay[] = [];
   const recentItems: string[] = [];
   let lastDaypart: Daypart | null = null;
 
@@ -172,7 +190,6 @@ export async function generateCampaign(
     const dowFullName = dowFull(date) as DayOfWeek;
     const seed = `${campaignId}:${i}`;
 
-    // choose daypart (weighted by slowness), avoid same as previous day when possible
     const dpWeights = operating.map((d) => d.weight);
     const dpIdx = pickWeighted(operating, dpWeights, seededUnit(seed + ":dp"));
     let chosen = operating[dpIdx];
@@ -185,7 +202,6 @@ export async function generateCampaign(
     }
     lastDaypart = chosen.daypart;
 
-    // choose item — rotate, avoid last 3
     let itemIdx = 0;
     for (let k = 0; k < rankedItems.length; k++) {
       const cand = rankedItems[(k + i) % rankedItems.length];
@@ -198,15 +214,13 @@ export async function generateCampaign(
     recentItems.push(item.name);
     if (recentItems.length > 3) recentItems.shift();
 
-    // discount %: band + slowness push + weekend protection, snapped to 5
-    const slownessPush = clamp(chosen.slowness, 0, 2) * 4; // slower → deeper
+    const slownessPush = clamp(chosen.slowness, 0, 2) * 4;
     const isWeekend = dowFullName === "Friday" || dowFullName === "Saturday";
-    const weekendTrim = isWeekend ? -3 : 0; // protect margin on busy nights
+    const weekendTrim = isWeekend ? -3 : 0;
     const jitter = (seededUnit(seed + ":pct") - 0.5) * 6;
     let pct = bandLo + (bandHi - bandLo) * 0.4 + slownessPush + weekendTrim + jitter;
     pct = clamp(Math.round(pct / 5) * 5, 10, 45);
 
-    // projections (shared with inline-edit endpoint)
     const { projected_redemptions, projected_revenue } = projectDay(
       sales,
       marketplace,
@@ -214,8 +228,6 @@ export async function generateCampaign(
       chosen.daypart,
       pct
     );
-
-    const rationale = buildRationale(chosen, item, pct, marketplace, heroMode);
 
     rawDays.push({
       id: randomUUID(),
@@ -229,12 +241,32 @@ export async function generateCampaign(
       pct_off: pct,
       projected_redemptions,
       projected_revenue,
-      rationale,
+      rationale: buildRationale(chosen, item, pct, marketplace, heroMode),
       edited: false,
     });
   }
 
-  // ---- copy generation (LLM or deterministic) ----
+  const slowNames = operating
+    .filter((d) => d.slowness > 0.2)
+    .sort((a, b) => b.slowness - a.slowness)
+    .map((d) => d.daypart);
+  const heroNames = rankedItems.slice(0, 3).map((i) => i.name);
+
+  return {
+    rawDays,
+    meta: { band: [bandLo, bandHi], heroMode, rankedItems, slowNames, heroNames },
+  };
+}
+
+// ============================================================
+// COPYWRITER — one caption per day (LLM or deterministic + guardrail)
+// ============================================================
+export async function writeCopy(
+  rawDays: RawDay[],
+  brand: BrandKit,
+  restaurantName: string,
+  campaignId: string
+) {
   const copyInputs: CopyInput[] = rawDays.map((d) => ({
     restaurantName,
     item: d.item,
@@ -246,43 +278,45 @@ export async function generateCampaign(
     voiceKeywords: brand.voice_keywords,
     seed: `${campaignId}:${d.day_index}`,
   }));
-  const copyResults = await generateCopyBatch(copyInputs);
+  return generateCopyBatch(copyInputs);
+}
 
-  const days: CampaignDay[] = rawDays.map((d, idx) => ({
-    ...d,
-    copy: copyResults[idx].copy,
-    creative_url: `/api/creative/${d.id}.png`,
-  }));
+// ============================================================
+// REVENUE — projections roll-up + assemble the campaign shell
+// ============================================================
+export function assembleCampaign(
+  sales: ParsedSalesSummary,
+  brand: BrandKit,
+  marketplace: MarketplaceSignals,
+  days: CampaignDay[],
+  meta: StrategyMeta,
+  opts: { campaignId: string; restaurantId: string; startDate: string; trace?: AgentEvent[] }
+): Campaign {
+  const restaurantName = brand.name || sales.restaurant_name;
+  const restaurantSlug = slugify(restaurantName);
+  const dataDays = Math.max(sales.date_range.days, 14);
 
   const projected_revenue = days.reduce((a, b) => a + b.projected_revenue, 0);
   const projected_redemptions = days.reduce((a, b) => a + b.projected_redemptions, 0);
-  const baseline_revenue = Math.round(
-    (sales.total_net_sales / dataDays) * CAMPAIGN_LEN
-  );
-
-  const slowNames = operating
-    .filter((d) => d.slowness > 0.2)
-    .sort((a, b) => b.slowness - a.slowness)
-    .map((d) => d.daypart);
-  const heroNames = rankedItems.slice(0, 3).map((i) => i.name);
+  const baseline_revenue = Math.round((sales.total_net_sales / dataDays) * CAMPAIGN_LEN);
 
   const strategy_notes = buildStrategyNotes(
-    slowNames,
-    heroNames,
+    meta.slowNames,
+    meta.heroNames,
     marketplace,
-    [bandLo, bandHi],
-    heroMode
+    meta.band,
+    meta.heroMode
   );
 
-  const campaign: Campaign = {
-    id: campaignId,
-    restaurant_id: restaurantId,
-    slug: `${restaurantSlug}-${monthSlug(startDate)}`,
+  return {
+    id: opts.campaignId,
+    restaurant_id: opts.restaurantId,
+    slug: `${restaurantSlug}-${monthSlug(opts.startDate)}`,
     restaurant_slug: restaurantSlug,
     restaurant_name: restaurantName,
-    month: monthLabel(startDate),
-    start_date: startDate,
-    title: `${restaurantName} — ${monthLabel(startDate).split(" ")[0]} Momentum Plan`,
+    month: monthLabel(opts.startDate),
+    start_date: opts.startDate,
+    title: `${restaurantName} — ${monthLabel(opts.startDate).split(" ")[0]} Momentum Plan`,
     status: "draft",
     paused: true,
     projected_revenue,
@@ -292,13 +326,46 @@ export async function generateCampaign(
     marketplace,
     sales_summary: sales,
     strategy_notes,
+    agent_trace: opts.trace ?? [],
     created_at: new Date().toISOString(),
     published_at: null,
   };
+}
 
+// ============================================================
+// Convenience wrapper (used by tests / non-orchestrated callers)
+// ============================================================
+export async function generateCampaign(
+  sales: ParsedSalesSummary,
+  brand: BrandKit,
+  marketplace: MarketplaceSignals,
+  opts: { startDate?: string; restaurantId?: string } = {}
+): Promise<{ campaign: Campaign; days: CampaignDay[] }> {
+  const startDate = opts.startDate ?? firstOfNextMonth();
+  const restaurantId = opts.restaurantId ?? randomUUID();
+  const campaignId = randomUUID();
+  const restaurantName = brand.name || sales.restaurant_name;
+
+  const analysis = analyzeSales(sales);
+  const { rawDays, meta } = buildDayPlan(sales, brand, marketplace, analysis, {
+    startDate,
+    campaignId,
+  });
+  const copyResults = await writeCopy(rawDays, brand, restaurantName, campaignId);
+  const days: CampaignDay[] = rawDays.map((d, idx) => ({
+    ...d,
+    copy: copyResults[idx].copy,
+    creative_url: `/api/creative/${d.id}.png`,
+  }));
+  const campaign = assembleCampaign(sales, brand, marketplace, days, meta, {
+    campaignId,
+    restaurantId,
+    startDate,
+  });
   return { campaign, days };
 }
 
+// ---- narrative helpers -------------------------------------
 function buildRationale(
   dp: DaypartAnalysis,
   item: ItemScore,

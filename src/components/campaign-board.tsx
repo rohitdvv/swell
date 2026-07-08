@@ -14,8 +14,10 @@ import {
   Users,
   Clock,
   Info,
+  Download,
+  Cpu,
 } from "lucide-react";
-import type { CampaignWithDays, CampaignDay, Daypart } from "@/lib/types";
+import type { CampaignWithDays, CampaignDay, Daypart, AgentEvent } from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
 import {
   formatCompactCurrency,
@@ -25,7 +27,7 @@ import {
   parseLocalDate,
   cn,
 } from "@/lib/utils";
-import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner } from "@/components/ui";
+import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
 
@@ -51,6 +53,7 @@ export function CampaignBoard({
   const [paused, setPaused] = React.useState(initial.paused);
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
   const [activating, setActivating] = React.useState(false);
+  const [view, setView] = React.useState<"calendar" | "posters">("calendar");
 
   const brand = campaign.brand;
   const brandColor = brand?.primary_color || "#f75410";
@@ -123,47 +126,66 @@ export function CampaignBoard({
             </ul>
           </Card>
 
-          {/* calendar — desktop */}
-          <Card className="hidden overflow-hidden md:block">
-            <div className="grid grid-cols-7 border-b border-border bg-surface-2">
-              {DOW_HEADERS.map((d) => (
-                <div
-                  key={d}
-                  className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {Array.from({ length: startDow }).map((_, i) => (
-                <div key={`blank-${i}`} className="min-h-[128px] border-b border-r border-border bg-surface-2/40" />
-              ))}
-              {days.map((d, i) => (
-                <DayCell
-                  key={d.id}
-                  day={d}
-                  index={i}
-                  brandColor={brandColor}
-                  editable={editable}
-                  onClick={() => setEditing(d)}
-                />
-              ))}
-            </div>
-          </Card>
-
-          {/* list — mobile */}
-          <div className="space-y-2.5 md:hidden">
-            {days.map((d) => (
-              <DayListItem
-                key={d.id}
-                day={d}
-                brandColor={brandColor}
-                editable={editable}
-                onClick={() => setEditing(d)}
-              />
-            ))}
+          {/* view toolbar */}
+          <div className="mb-4 flex items-center justify-between">
+            <Segmented
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "calendar", label: "Calendar" },
+                { value: "posters", label: "Posters" },
+              ]}
+            />
+            <span className="text-xs text-fg-subtle">{days.length} auto-branded posters</span>
           </div>
+
+          {view === "calendar" ? (
+            <>
+              {/* calendar — desktop */}
+              <Card className="hidden overflow-hidden md:block">
+                <div className="grid grid-cols-7 border-b border-border bg-surface-2">
+                  {DOW_HEADERS.map((d) => (
+                    <div
+                      key={d}
+                      className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
+                    >
+                      {d}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7">
+                  {Array.from({ length: startDow }).map((_, i) => (
+                    <div key={`blank-${i}`} className="min-h-[128px] border-b border-r border-border bg-surface-2/40" />
+                  ))}
+                  {days.map((d, i) => (
+                    <DayCell
+                      key={d.id}
+                      day={d}
+                      index={i}
+                      brandColor={brandColor}
+                      editable={editable}
+                      onClick={() => setEditing(d)}
+                    />
+                  ))}
+                </div>
+              </Card>
+
+              {/* list — mobile */}
+              <div className="space-y-2.5 md:hidden">
+                {days.map((d) => (
+                  <DayListItem
+                    key={d.id}
+                    day={d}
+                    brandColor={brandColor}
+                    editable={editable}
+                    onClick={() => setEditing(d)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <PostersGrid days={days} editable={editable} onOpen={setEditing} />
+          )}
         </div>
 
         {/* ---------- sidebar ---------- */}
@@ -251,6 +273,10 @@ export function CampaignBoard({
                   </div>
                 )}
               </Card>
+            )}
+
+            {campaign.agent_trace && campaign.agent_trace.length > 0 && (
+              <AgentTrace trace={campaign.agent_trace} brandColor={brandColor} />
             )}
           </div>
         </div>
@@ -543,6 +569,108 @@ function EditModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+function PostersGrid({
+  days,
+  editable,
+  onOpen,
+}: {
+  days: CampaignDay[];
+  editable: boolean;
+  onOpen: (d: CampaignDay) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+      {days.map((d, i) => (
+        <PosterCard key={d.id} day={d} index={i} editable={editable} onOpen={() => onOpen(d)} />
+      ))}
+    </div>
+  );
+}
+
+function PosterCard({
+  day,
+  index,
+  editable,
+  onOpen,
+}: {
+  day: CampaignDay;
+  index: number;
+  editable: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.02, 0.5) }}
+      className="group relative overflow-hidden rounded-xl border border-border bg-surface-2 shadow-soft"
+    >
+      <button onClick={onOpen} className="block w-full" aria-label={`Edit ${day.item}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={day.creative_url}
+          alt={`${day.item} — ${day.pct_off}% off`}
+          loading="lazy"
+          className="aspect-[4/5] w-full object-cover transition group-hover:scale-[1.02]"
+        />
+      </button>
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-2">
+        <span className="rounded-md bg-black/45 px-1.5 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+          {dowShort(day.date)} {parseLocalDate(day.date).getDate()}
+        </span>
+      </div>
+      <a
+        href={`${day.creative_url}?dl=1`}
+        download={`${day.item.replace(/\s+/g, "-").toLowerCase()}-${day.date}.png`}
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-2 right-2 hidden size-8 items-center justify-center rounded-lg bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70 group-hover:flex"
+        title="Download poster"
+      >
+        <Download className="size-4" />
+      </a>
+      {editable && (
+        <span className="absolute bottom-2 left-2 hidden rounded-md bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm group-hover:block">
+          Tap to edit
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+function AgentTrace({ trace, brandColor }: { trace: AgentEvent[]; brandColor: string }) {
+  const total = trace.reduce((a, e) => a + e.ms, 0);
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Cpu className="size-4" style={{ color: brandColor }} />
+        <span className="text-sm font-semibold">Agent activity</span>
+        <Badge tone="muted" className="ml-auto">
+          {trace.length} agents · {(total / 1000).toFixed(1)}s
+        </Badge>
+      </div>
+      <ol className="space-y-2.5">
+        {trace.map((e, i) => (
+          <li key={i} className="relative pl-5">
+            <span
+              className="absolute left-0 top-1.5 size-2 rounded-full"
+              style={{ background: brandColor }}
+            />
+            {i < trace.length - 1 && (
+              <span className="absolute left-[3.5px] top-3.5 h-full w-px bg-border" />
+            )}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-semibold">{e.agent}</span>
+              <span className="shrink-0 text-[10px] tabular-nums text-fg-subtle">{e.ms}ms</span>
+            </div>
+            <div className="text-[11px] text-fg-subtle">{e.role}</div>
+            <div className="mt-0.5 text-[11px] text-fg-muted">{e.detail}</div>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 

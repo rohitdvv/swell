@@ -265,6 +265,25 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
     }
   }
 
+  // imagery — hero / gallery photos for poster backgrounds
+  const imageSet = new Set<string>();
+  const ogImg = abs($('meta[property="og:image"]').attr("content"));
+  if (ogImg) imageSet.add(ogImg);
+  $("img").each((_, el) => {
+    const src =
+      $(el).attr("src") || $(el).attr("data-src") || $(el).attr("data-lazy-src");
+    const resolved = abs(src ?? undefined);
+    if (!resolved) return;
+    if (/\.svg(\?|$)/i.test(resolved)) return; // skip icons/logos
+    if (/(logo|icon|sprite|favicon|avatar|badge|pixel|1x1)/i.test(resolved)) return;
+    const w = parseInt($(el).attr("width") || "0", 10);
+    const h = parseInt($(el).attr("height") || "0", 10);
+    if ((w && w < 200) || (h && h < 200)) return; // skip tiny images
+    imageSet.add(resolved);
+  });
+  const image_urls = [...imageSet].slice(0, 12);
+  if (image_urls.length) notes.push(`Collected ${image_urls.length} site images for poster backgrounds.`);
+
   // tagline
   const tagline =
     $('meta[property="og:description"]').attr("content")?.trim() ||
@@ -287,6 +306,7 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
     domain,
     name,
     logo_url,
+    image_urls,
     primary_color: primary,
     secondary_color: secondary,
     text_on_primary,
@@ -307,6 +327,7 @@ export function neutralBrandKit(name: string): BrandKit {
     domain: "",
     name,
     logo_url: null,
+    image_urls: [],
     primary_color: primary,
     secondary_color: "#ff3b6b",
     text_on_primary: "light",

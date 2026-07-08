@@ -17,6 +17,8 @@ import {
   Loader2,
   Store,
   TrendingUp,
+  Pencil,
+  Images,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -472,11 +474,13 @@ function SalesPreview({
 }
 
 const GEN_STEPS = [
-  { icon: FileSpreadsheet, label: "Reading sales history", sub: "z-scoring dayparts vs your baseline" },
-  { icon: Globe, label: "Extracting brand kit", sub: "logo, colors, fonts & voice vector" },
-  { icon: Store, label: "Reading marketplace demand", sub: "saves, redemptions, neighborhood mix" },
-  { icon: Sparkles, label: "Composing 30 days", sub: "items, windows, discounts & copy" },
-  { icon: TrendingUp, label: "Projecting revenue", sub: "redemptions × marketplace lift" },
+  { icon: Globe, label: "Brand Agent", sub: "logo, palette, fonts, voice & imagery" },
+  { icon: Store, label: "Demand Agent", sub: "saves, redemptions, neighborhood mix" },
+  { icon: FileSpreadsheet, label: "Analyst Agent", sub: "z-scoring dayparts vs your baseline" },
+  { icon: Sparkles, label: "Strategy Agent", sub: "30 offers — item, window & discount" },
+  { icon: Pencil, label: "Copywriter Agent", sub: "on-brand captions + guardrail" },
+  { icon: Images, label: "Creative Agent", sub: "a branded poster for every day" },
+  { icon: TrendingUp, label: "Revenue Agent", sub: "redemptions × lift → incremental revenue" },
 ];
 
 function GeneratingView({ hasUrl }: { hasUrl: boolean }) {
@@ -503,7 +507,7 @@ function GeneratingView({ hasUrl }: { hasUrl: boolean }) {
         {GEN_STEPS.map((s, i) => {
           const state = i < active ? "done" : i === active ? "active" : "todo";
           const Icon = s.icon;
-          if (i === 1 && !hasUrl) s = { ...s, sub: "neutral branding (no URL)" };
+          if (i === 0 && !hasUrl) s = { ...s, sub: "neutral branding (no URL)" };
           return (
             <motion.div
               key={i}
