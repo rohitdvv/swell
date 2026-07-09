@@ -173,29 +173,28 @@ export function Donut({
   const total = segments.reduce((a, b) => a + b.value, 0) || 1;
   const r = 42;
   const c = 2 * Math.PI * r;
-  let offset = 0;
+  // Precompute each segment's dash length + cumulative offset (no render-time mutation).
+  const arcs = segments.map((s, i) => {
+    const dash = (s.value / total) * c;
+    const offset = segments.slice(0, i).reduce((a, b) => a + (b.value / total) * c, 0);
+    return { ...s, dash, offset };
+  });
   return (
     <div className="flex items-center gap-4">
       <svg viewBox="0 0 100 100" width={size} height={size} className="shrink-0 -rotate-90">
-        {segments.map((s, i) => {
-          const frac = s.value / total;
-          const dash = frac * c;
-          const el = (
-            <circle
-              key={i}
-              cx="50"
-              cy="50"
-              r={r}
-              fill="none"
-              stroke={s.color}
-              strokeWidth="14"
-              strokeDasharray={`${dash} ${c - dash}`}
-              strokeDashoffset={-offset}
-            />
-          );
-          offset += dash;
-          return el;
-        })}
+        {arcs.map((s, i) => (
+          <circle
+            key={i}
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke={s.color}
+            strokeWidth="14"
+            strokeDasharray={`${s.dash} ${c - s.dash}`}
+            strokeDashoffset={-s.offset}
+          />
+        ))}
       </svg>
       <div className="space-y-1">
         {segments.map((s, i) => (
