@@ -1,6 +1,7 @@
 import "server-only";
 import sharp from "sharp";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Campaign, CampaignDay } from "./types";
 import { dowFull, formatShortDate, clamp } from "./utils";
@@ -199,10 +200,14 @@ async function resolveBackground(
 }
 
 // ---- disk cache (survives restarts; "Vercel Blob" in prod) --
+// IMPORTANT: cache OUTSIDE the project directory — the Next dev watcher
+// reloads the browser whenever files change under the project root, and
+// poster writes under ./data caused a refresh loop.
 function creativesDir(): string {
+  const base = process.env.SWELL_DATA_DIR || path.join(os.homedir(), ".swell");
   const candidates = [
     process.env.SWELL_CREATIVES,
-    path.join(process.cwd(), "data", "creatives"),
+    path.join(base, "creatives"),
     path.join("/tmp", "swell-creatives"),
   ].filter(Boolean) as string[];
   for (const dir of candidates) {

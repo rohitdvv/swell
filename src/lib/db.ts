@@ -1,5 +1,6 @@
 import "server-only";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type {
   Campaign,
@@ -45,7 +46,11 @@ async function makeBackend(): Promise<Backend> {
     return backend;
   }
   const { PGlite } = await import("@electric-sql/pglite");
-  let dir = path.join(process.cwd(), "data", "pg");
+  // IMPORTANT: store DB files OUTSIDE the project directory. The Next dev
+  // watcher reloads the browser on any file change, and live Postgres files
+  // change on every query — keeping them under ./data caused a reload loop.
+  const base = process.env.SWELL_DATA_DIR || path.join(os.homedir(), ".swell");
+  let dir = path.join(base, "pg");
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch {
