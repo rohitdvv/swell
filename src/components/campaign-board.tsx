@@ -35,6 +35,7 @@ import {
 import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
+import { CampaignReport } from "@/components/campaign-report";
 
 const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -58,7 +59,9 @@ export function CampaignBoard({
   const [paused, setPaused] = React.useState(initial.paused);
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
   const [activating, setActivating] = React.useState(false);
-  const [view, setView] = React.useState<"calendar" | "posters" | "distribution">("calendar");
+  const [view, setView] = React.useState<"calendar" | "posters" | "report" | "distribution">(
+    "calendar"
+  );
 
   const brand = campaign.brand;
   const brandColor = brand?.primary_color || "#f75410";
@@ -142,6 +145,7 @@ export function CampaignBoard({
               onChange={setView}
               options={[
                 { value: "calendar", label: "Calendar" },
+                { value: "report", label: "Report" },
                 { value: "posters", label: "Posters" },
                 { value: "distribution", label: "Distribution" },
               ]}
@@ -151,6 +155,8 @@ export function CampaignBoard({
 
           {view === "distribution" ? (
             <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
+          ) : view === "report" ? (
+            <CampaignReport campaign={{ ...campaign, days }} />
           ) : view === "calendar" ? (
             <>
               {/* calendar — desktop */}
