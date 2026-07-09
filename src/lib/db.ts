@@ -9,6 +9,7 @@ import type {
   MarketplaceSignals,
   ParsedSalesSummary,
   Subscription,
+  User,
 } from "./types";
 
 // ============================================================
@@ -166,6 +167,14 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
       json TEXT NOT NULL
+    )`);
+  await exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      email TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      restaurant_name TEXT,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )`);
   await exec(`
     CREATE TABLE IF NOT EXISTS subscriptions (
@@ -459,6 +468,47 @@ export const repo = {
        ON CONFLICT(restaurant_key) DO UPDATE SET json=EXCLUDED.json`,
       [key, JSON.stringify(signal)]
     );
+  },
+
+  // ---- users (auth) ----
+  async createUser(input: {
+    email: string;
+    name: string;
+    restaurant_name?: string | null;
+    password_hash: string;
+  }): Promise<void> {
+    await q(
+      `INSERT INTO users (email, name, restaurant_name, password_hash, created_at)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [
+        input.email.toLowerCase(),
+        input.name,
+        input.restaurant_name ?? null,
+        input.password_hash,
+        new Date().toISOString(),
+      ]
+    );
+  },
+
+  async getUserWithHash(
+    email: string
+  ): Promise<{ user: User; password_hash: string } | null> {
+    const row = await one(`SELECT * FROM users WHERE email=$1`, [email.toLowerCase()]);
+    if (!row) return null;
+    return {
+      user: {
+        email: row.email as string,
+        name: row.name as string,
+        restaurant_name: (row.restaurant_name as string) ?? null,
+        created_at: row.created_at as string,
+      },
+      password_hash: row.password_hash as string,
+    };
+  },
+
+  async getUser(email: string): Promise<User | null> {
+    const found = await this.getUserWithHash(email);
+    return found?.user ?? null;
   },
 
   // ---- subscriptions ----

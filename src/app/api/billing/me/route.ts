@@ -12,9 +12,11 @@ export async function GET() {
   const plan = sub ? PLANS[sub.plan] : null;
   const usedThisMonth = await repo.countCampaignsThisMonth();
   const limit = plan ? plan.limits.campaignsPerMonth : 0;
+  const user = account.email ? await repo.getUser(account.email) : null;
 
   return NextResponse.json({
     email: account.email,
+    user,
     subscription: sub,
     plan,
     usage: { campaigns: usedThisMonth, limit },

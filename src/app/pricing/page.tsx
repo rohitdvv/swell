@@ -6,8 +6,7 @@ import { motion } from "framer-motion";
 import { Check, ArrowRight, Sparkles, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Button, Card, Badge, Input, Field, Segmented } from "@/components/ui";
-import { Modal } from "@/components/modal";
+import { Button, Card, Badge, Segmented } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import {
   PLANS,
@@ -20,22 +19,19 @@ import {
 export default function PricingPage() {
   const [interval, setInterval] = React.useState<Interval>("monthly");
   const [busy, setBusy] = React.useState<PlanId | null>(null);
-  const [emailOpen, setEmailOpen] = React.useState(false);
-  const [email, setEmail] = React.useState("");
-  const [pending, setPending] = React.useState<PlanId | null>(null);
 
-  async function subscribe(plan: PlanId, withEmail?: string) {
+  async function subscribe(plan: PlanId) {
     setBusy(plan);
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, interval, email: withEmail }),
+        body: JSON.stringify({ plan, interval }),
       });
       const data = await res.json();
-      if (data.needEmail) {
-        setPending(plan);
-        setEmailOpen(true);
+      if (data.needAuth) {
+        toast("Create an account first — it takes 20 seconds.", "info");
+        window.location.assign("/auth?next=/pricing");
         return;
       }
       if (data.url) {
@@ -64,6 +60,9 @@ export default function PricingPage() {
         <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
           <Logo />
           <nav className="ml-auto flex items-center gap-3">
+            <Link href="/auth" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+              Sign in
+            </Link>
             <Link href="/account" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
               Account
             </Link>
@@ -176,39 +175,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <Modal open={emailOpen} onClose={() => setEmailOpen(false)} title="Start your subscription">
-        <div className="space-y-4 p-5">
-          <p className="text-sm text-fg-muted">
-            Stripe isn&apos;t connected yet, so we&apos;ll activate a{" "}
-            <strong className="text-fg">demo subscription</strong> to your email. Add a Stripe test
-            key to run real checkout.
-          </p>
-          <Field label="Work email">
-            <Input
-              type="email"
-              placeholder="owner@restaurant.com"
-              value={email}
-              autoFocus
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <Button
-            className="w-full"
-            size="lg"
-            loading={busy !== null}
-            onClick={() => {
-              if (!/.+@.+\..+/.test(email)) {
-                toast("Enter a valid email.", "error");
-                return;
-              }
-              setEmailOpen(false);
-              if (pending) subscribe(pending, email);
-            }}
-          >
-            Activate {pending ? PLANS[pending].name : ""} <ArrowRight className="size-4" />
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

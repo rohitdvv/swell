@@ -10,7 +10,7 @@ This is the **operator side**: the Generator, the public Campaign Artifact, and 
 internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
 
 [![CI](https://github.com/rohitdvv/got60/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/got60/actions/workflows/ci.yml)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=NEXT_PUBLIC_BRAIN_PASSWORD&envDescription=Shared%20password%20for%20the%20Brain%20Console%20(e.g.%20swell))
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=SWELL_SESSION_SECRET&envDescription=Random%20string%20that%20signs%20auth%20session%20cookies)
 
 ![Landing](docs/landing.png)
 
@@ -23,16 +23,27 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 
 ---
 
+> 📐 **Deep dive: [ARCHITECTURE.md](ARCHITECTURE.md)** — system diagrams, the 10-agent
+> pipeline, revenue model math, auth/billing flow, data model, and API surface.
+
+## The flow (enterprise)
+
+**Sign up → sign in → choose a plan → pay (Stripe / demo) → Console.**
+`/auth` creates the account (scrypt-hashed passwords, httpOnly sessions), `/pricing`
+starts checkout for the signed-in account, and `/console` is gated: unauthenticated
+visitors are redirected to sign-in, signed-in users without an active subscription are
+sent to pick a plan.
+
 ## The three pieces
 
 | Piece | Route | What it is |
 |---|---|---|
-| **Brain Console** | `/console` | Internal tool (shared-password gate). Upload CSV → paste URL → generate → edit any of the 30 deals → publish. |
+| **Brain Console** | `/console` | Gated by account + active subscription. Upload CSV → paste URL + location → generate → edit any of the 30 deals → publish. |
 | **The Generator** | `/api/generate` | The brain. Parses sales, extracts the brand kit, reads marketplace demand, composes a 30-day plan, writes copy, renders creative, persists to the DB. |
 | **Campaign Artifact** | `/c/[slug]` | The public deliverable. Calendar + **Report** (sales vs projection charts) + **Posters** + **Distribution** tabs, Activate, inline edit. OG/Twitter share cards. No auth. |
 | **Assistant** | floating "Ask Swell" | RAG chatbot on every campaign — answers the owner's questions ("why is Tuesday 30% off?") grounded in *their* campaign data. |
 
-Start at **`/`** for the landing page, or jump straight to **`/console`** (password: `swell`).
+Start at **`/`** → **Get started** (sign up) → pick a plan → **`/console`**.
 
 ---
 
@@ -43,7 +54,8 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Then open `/console`, enter `swell`, and click **“Load the Osteria Lume sample”** —
+Then sign up at `/auth`, pick any plan (instant demo mode without a Stripe key), and in
+the Console click **“Load the Osteria Lume sample”** —
 a realistic 45-day NYC trattoria export is parsed live and turned into a full campaign.
 No CSV or API key required.
 
@@ -179,7 +191,7 @@ annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-la
 ## Environment
 
 Copy `.env.example` → `.env.local`. All values are optional — see the file for details
-(`NEXT_PUBLIC_BRAIN_PASSWORD`, optional LLM keys, `DATABASE_URL`).
+(`SWELL_SESSION_SECRET`, optional LLM keys, `DATABASE_URL`).
 
 ## API keys & tokens — exactly what unlocks what
 
@@ -211,7 +223,7 @@ module** to compile, so it deploys cleanly to Vercel serverless.
 2. **Import this repo into Vercel** ("New Project" → pick `rohitdvv/got60`).
 3. **Set env vars** in Vercel → Settings → Environment Variables:
    - `DATABASE_URL` = your Neon string
-   - `NEXT_PUBLIC_BRAIN_PASSWORD`, `SWELL_SESSION_SECRET` (any random string)
+   - `SWELL_SESSION_SECRET` (any random string — signs session cookies)
    - `NEXT_PUBLIC_BASE_URL` = your deployed URL (for share/OG images)
    - *(optional)* `STRIPE_SECRET_KEY` (test key) + `STRIPE_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`/`GROQ_API_KEY`
 4. **Deploy.** Tables auto-create on first request. Done — a live, persistent URL.

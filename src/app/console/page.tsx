@@ -31,69 +31,68 @@ import { toast } from "@/components/toaster";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
-const BRAIN_PASSWORD = process.env.NEXT_PUBLIC_BRAIN_PASSWORD || "swell";
+type Gate = "loading" | "unauthed" | "unsubscribed" | "ok";
 
 export default function ConsolePage() {
-  const [unlocked, setUnlocked] = React.useState(false);
-  React.useEffect(() => {
-    setUnlocked(sessionStorage.getItem("swell-brain") === "1");
-  }, []);
-  if (!unlocked) return <Gate onUnlock={() => setUnlocked(true)} />;
-  return <Console />;
-}
+  const [gate, setGate] = React.useState<Gate>("loading");
+  const [userName, setUserName] = React.useState<string>("");
 
-function Gate({ onUnlock }: { onUnlock: () => void }) {
-  const [pw, setPw] = React.useState("");
-  const [err, setErr] = React.useState(false);
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (pw === BRAIN_PASSWORD) {
-      sessionStorage.setItem("swell-brain", "1");
-      onUnlock();
-    } else {
-      setErr(true);
-    }
+  React.useEffect(() => {
+    fetch("/api/billing/me")
+      .then((r) => r.json())
+      .then((me) => {
+        if (!me?.user) {
+          setGate("unauthed");
+          window.location.replace("/auth?next=/console");
+          return;
+        }
+        setUserName(me.user.name);
+        setGate(me.subscription && me.subscription.status === "active" ? "ok" : "unsubscribed");
+      })
+      .catch(() => setGate("unauthed"));
+  }, []);
+
+  if (gate === "loading" || gate === "unauthed") {
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-2 text-fg-muted">
+        <Loader2 className="size-4 animate-spin" /> {gate === "loading" ? "Checking your session…" : "Redirecting to sign in…"}
+      </div>
+    );
   }
-  return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-sm"
-      >
-        <Card className="p-8">
-          <div className="mb-6 flex flex-col items-center text-center">
-            <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-ember-gradient shadow-ember">
+
+  if (gate === "unsubscribed") {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+          <Card className="p-8 text-center">
+            <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-ember-gradient shadow-ember">
               <Lock className="size-5 text-white" />
             </div>
             <Logo href={null} />
-            <p className="mt-2 text-sm text-fg-muted">The Brain Console</p>
-            <p className="text-xs text-fg-subtle">Internal — Aiden, Jerrell & team</p>
-          </div>
-          <form onSubmit={submit} className="space-y-3">
-            <Input
-              type="password"
-              placeholder="Shared password"
-              value={pw}
-              autoFocus
-              onChange={(e) => {
-                setPw(e.target.value);
-                setErr(false);
+            <p className="mt-3 text-sm text-fg-muted">
+              Hi {userName.split(" ")[0]} — one more step: pick a plan to unlock the Console.
+            </p>
+            <Link href="/pricing">
+              <Button className="mt-5 w-full" size="lg">
+                Choose a plan <ArrowRight className="size-4" />
+              </Button>
+            </Link>
+            <button
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.assign("/auth");
               }}
-              className={err ? "border-red-400 focus:ring-red-500/20" : ""}
-            />
-            {err && <p className="text-xs text-red-500">Incorrect password.</p>}
-            <Button type="submit" className="w-full" size="lg">
-              Enter <ArrowRight className="size-4" />
-            </Button>
-          </form>
-          <p className="mt-4 text-center text-[11px] text-fg-subtle">
-            Hint for demo: <code className="rounded bg-surface-2 px-1">swell</code>
-          </p>
-        </Card>
-      </motion.div>
-    </div>
-  );
+              className="mt-3 text-xs text-fg-subtle hover:text-fg"
+            >
+              Sign out
+            </button>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return <Console />;
 }
 
 type Phase = "input" | "generating" | "result";

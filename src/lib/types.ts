@@ -88,6 +88,14 @@ export type MarketplaceSignals = {
   notes: string[];
 };
 
+// ---- Auth ----------------------------------------------------
+export type User = {
+  email: string;
+  name: string;
+  restaurant_name: string | null;
+  created_at: string;
+};
+
 // ---- Billing / subscriptions --------------------------------
 export type Subscription = {
   email: string;

@@ -44,12 +44,15 @@ export default function Landing() {
             <Link href="/pricing" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
               Pricing
             </Link>
+            <Link href="/auth" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+              Sign in
+            </Link>
             <ThemeToggle />
             <Link
-              href="/console"
+              href="/auth"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ember-gradient px-3.5 text-sm font-medium text-white shadow-ember transition hover:brightness-105"
             >
-              Console <ArrowRight className="size-3.5" />
+              Get started <ArrowRight className="size-3.5" />
             </Link>
           </nav>
         </div>
@@ -73,20 +76,20 @@ export default function Landing() {
             </p>
             <div className="animate-fade-up delay-3 mt-8 flex flex-wrap items-center gap-3">
               <Link
-                href="/console"
+                href="/auth"
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-ember-gradient px-6 text-[15px] font-medium text-white shadow-ember transition hover:brightness-105"
               >
-                <Sparkles className="size-4" /> Open the Console
+                <Sparkles className="size-4" /> Get started free
               </Link>
               <Link
-                href="/console"
+                href="/pricing"
                 className="inline-flex h-12 items-center gap-2 rounded-xl border border-border-strong bg-surface px-6 text-[15px] font-medium text-fg shadow-soft transition hover:bg-surface-2"
               >
-                Try the live demo <ArrowRight className="size-4" />
+                See pricing <ArrowRight className="size-4" />
               </Link>
             </div>
             <p className="animate-fade-up delay-4 mt-4 text-xs text-fg-subtle">
-              No account. No setup. Loads a real NYC sample restaurant in one click.
+              Sign up → pick a plan → your first campaign in minutes. Sample data included.
             </p>
           </div>
 
@@ -233,7 +236,7 @@ export default function Landing() {
               Their CSV in, their 30-day branded campaign out — as a URL you can text to any operator.
             </p>
             <Link
-              href="/console"
+              href="/auth"
               className="mt-8 inline-flex h-12 items-center gap-2 rounded-xl bg-white px-6 text-[15px] font-semibold text-ember-700 shadow-lift transition hover:bg-white/90"
             >
               <Zap className="size-4" /> Generate a campaign now

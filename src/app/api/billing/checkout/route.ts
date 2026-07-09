@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/billing/stripe";
 import { PLANS, type PlanId, type Interval } from "@/lib/billing/plans";
 import { repo } from "@/lib/db";
-import { setAccountCookie } from "@/lib/billing/account";
+import { getAccountEmail, setAccountCookie } from "@/lib/billing/account";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,10 +11,17 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const plan = body?.plan as PlanId;
   const interval: Interval = body?.interval === "annual" ? "annual" : "monthly";
-  const email: string | undefined = (body?.email || "").trim() || undefined;
+  // Enterprise flow: the subscription belongs to the signed-in account.
+  const email = (await getAccountEmail()) ?? undefined;
 
   if (!plan || !PLANS[plan]) {
     return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
+  }
+  if (!email) {
+    return NextResponse.json(
+      { error: "Sign in to subscribe.", needAuth: true },
+      { status: 401 }
+    );
   }
   const p = PLANS[plan];
   const origin = new URL(request.url).origin;
@@ -52,12 +59,6 @@ export async function POST(request: Request) {
   }
 
   // ---- Keyless demo mode: activate immediately so the flow is visible ----
-  if (!email) {
-    return NextResponse.json(
-      { error: "Enter an email to start your demo subscription.", needEmail: true },
-      { status: 400 }
-    );
-  }
   const periodEnd = new Date();
   periodEnd.setDate(periodEnd.getDate() + (interval === "annual" ? 365 : 30));
   await repo.upsertSubscription({
@@ -71,5 +72,5 @@ export async function POST(request: Request) {
     stripe_subscription_id: null,
   });
   await setAccountCookie(email);
-  return NextResponse.json({ url: "/account?demo=1", mode: "demo" });
+  return NextResponse.json({ url: "/console", mode: "demo" });
 }

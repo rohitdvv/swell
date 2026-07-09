@@ -130,7 +130,11 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
   return facts;
 }
 
-export function retrieve(question: string, facts: Fact[], k = 6): Fact[] {
+export function retrieve(
+  question: string,
+  facts: Fact[],
+  k = 6
+): { chunks: Fact[]; maxScore: number } {
   const words = (question.toLowerCase().match(/[a-z0-9%']+/g) || []).filter((w) => w.length > 2);
   const scored = facts.map((f) => {
     const hay = (f.text + " " + f.tags.join(" ")).toLowerCase();
@@ -142,45 +146,69 @@ export function retrieve(question: string, facts: Fact[], k = 6): Fact[] {
     return { f, score };
   });
   const hits = scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, k);
+  const maxScore = hits[0]?.score ?? 0;
   // Always ground with overview + revenue even on weak matches.
   const base = facts.filter((f) => f.id === "overview" || f.id === "revenue");
   const merged = [...new Map([...hits.map((h) => h.f), ...base].map((f) => [f.id, f])).values()];
-  return merged.slice(0, k + 2);
+  return { chunks: merged.slice(0, k + 2), maxScore };
 }
 
 // ---- deterministic (keyless) answers -----------------------
-function rulesAnswer(question: string, c: CampaignWithDays, facts: Fact[]): string {
-  const q = question.toLowerCase();
+const CAPABILITIES =
+  "I can only answer from this campaign's data. Try asking about:\n• projected revenue & redemptions\n• why a day has its discount / item\n• a specific day (\"what's the offer Friday?\")\n• how weather & local events change the plan\n• how to activate, edit a day, or download posters";
+
+function rulesAnswer(
+  question: string,
+  c: CampaignWithDays,
+  facts: Fact[],
+  maxScore: number
+): string {
+  const q = question.toLowerCase().trim();
   const find = (id: string) => facts.find((f) => f.id === id)?.text || "";
 
-  // day-specific question?
+  // greetings / small talk — don't dump facts at "hi"
+  if (/^(hi|hello|hey|yo|thanks|thank you|ok|okay|cool)\b/.test(q) && q.length < 25) {
+    return `Hi! I'm the Swell assistant for ${c.restaurant_name}. ${CAPABILITIES}`;
+  }
+
+  // day-specific question? (match day-of-week, date, or a distinctive item word)
   const dayHit = c.days.find(
     (d) =>
       q.includes(dowFull(d.date).toLowerCase()) ||
       q.includes(formatShortDate(d.date).toLowerCase()) ||
-      q.includes(d.item.toLowerCase().split(" ")[0])
+      d.item
+        .toLowerCase()
+        .split(" ")
+        .some((w) => w.length >= 4 && q.includes(w))
   );
 
-  if (/why.*(discount|%|percent|off)|how.*(discount|decided|chose)/.test(q))
-    return `${find("strategy")}\n\nEvery day also adapts to live conditions: ${
-      find("weather") || "add a location to enable weather/event adaptation."
+  if (/why.*(discount|%|percent|off)|how.*(discount|decided|chose|pick)/.test(q))
+    return `${find("strategy")}\n\n${
+      find("weather") || "Add a location when generating to enable weather/event adaptation."
     }`;
-  if (dayHit && /(what|why|when|how|off|deal|offer)/.test(q)) {
-    const d = dayHit as CampaignDay;
-    return facts.find((f) => f.id === `day-${d.day_index}`)?.text || find("overview");
+  if (dayHit && /(what|why|when|how|off|deal|offer|special)/.test(q)) {
+    return facts.find((f) => f.id === `day-${(dayHit as CampaignDay).day_index}`)?.text || find("overview");
   }
-  if (/revenue|money|earn|profit|lift|project/.test(q)) return find("revenue");
-  if (/weather|rain|event|forecast|temperature/.test(q))
-    return find("weather") || "This campaign has no location set, so live weather/event adaptation is off. Regenerate with a location to enable it.";
+  if (/revenue|money|earn|profit|lift|project|sales/.test(q)) return find("revenue");
+  if (/weather|rain|event|forecast|temperature|game|concert|holiday/.test(q))
+    return (
+      find("weather") ||
+      "This campaign has no location set, so live weather/event adaptation is off. Regenerate with a location to enable it."
+    );
   if (/item|dish|menu|seller|food/.test(q)) return find("items");
-  if (/activate|live|start|publish|edit|change|poster|download|connect|ads/.test(q)) return find("howto");
+  if (/activate|live|start|publish|edit|change|poster|download|connect|ads|meta|google/.test(q))
+    return find("howto");
   if (/simulated|marketplace|saves|demand/.test(q)) return find("marketplace");
-  if (/best|slow|busy|day of week|weekday/.test(q)) return find("dow");
+  if (/best|slow|busy|day of week|weekday|check/.test(q)) return find("dow");
 
-  // fallback: stitched summary of top retrieved facts
-  return retrieve(question, facts, 3)
-    .map((f) => f.text)
-    .join("\n\n");
+  // Honest fallback: if retrieval is weak, say so — never stitch random facts.
+  if (maxScore < 3) {
+    return `I don't have an answer for that in this campaign's data. ${CAPABILITIES}`;
+  }
+  // Strong single match → return just the best fact, clearly framed.
+  const { chunks } = retrieve(question, facts, 1);
+  const best = chunks.find((f) => f.id !== "overview" && f.id !== "revenue") ?? chunks[0];
+  return `Here's what this campaign's data says:\n\n${best.text}`;
 }
 
 // ---- optional LLM (real RAG generation) ---------------------
@@ -238,8 +266,12 @@ export async function askAssistant(
   campaign: CampaignWithDays
 ): Promise<AssistantReply> {
   const facts = buildFacts(campaign);
-  const chunks = retrieve(question, facts);
+  const { chunks, maxScore } = retrieve(question, facts);
   const llm = await llmAnswer(question, chunks);
   if (llm) return { answer: llm, source: "llm", suggestions: SUGGESTIONS };
-  return { answer: rulesAnswer(question, campaign, facts), source: "rules", suggestions: SUGGESTIONS };
+  return {
+    answer: rulesAnswer(question, campaign, facts, maxScore),
+    source: "rules",
+    suggestions: SUGGESTIONS,
+  };
 }
