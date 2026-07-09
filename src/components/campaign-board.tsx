@@ -36,6 +36,7 @@ import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
 import { CampaignReport } from "@/components/campaign-report";
+import { AssistantWidget } from "@/components/assistant-widget";
 
 const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -326,6 +327,12 @@ export function CampaignBoard({
         onClose={() => setEditing(null)}
         onSaved={applyDayUpdate}
         editable={editable}
+      />
+
+      <AssistantWidget
+        slug={campaign.slug}
+        brandColor={brandColor}
+        restaurantName={campaign.restaurant_name}
       />
     </div>
   );

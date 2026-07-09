@@ -29,7 +29,8 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 |---|---|---|
 | **Brain Console** | `/console` | Internal tool (shared-password gate). Upload CSV → paste URL → generate → edit any of the 30 deals → publish. |
 | **The Generator** | `/api/generate` | The brain. Parses sales, extracts the brand kit, reads marketplace demand, composes a 30-day plan, writes copy, renders creative, persists to the DB. |
-| **Campaign Artifact** | `/c/[slug]` | The public deliverable. Calendar grid + projected revenue/redemptions + Activate + inline edit. OG/Twitter share cards. No auth. |
+| **Campaign Artifact** | `/c/[slug]` | The public deliverable. Calendar + **Report** (sales vs projection charts) + **Posters** + **Distribution** tabs, Activate, inline edit. OG/Twitter share cards. No auth. |
+| **Assistant** | floating "Ask Swell" | RAG chatbot on every campaign — answers the owner's questions ("why is Tuesday 30% off?") grounded in *their* campaign data. |
 
 Start at **`/`** for the landing page, or jump straight to **`/console`** (password: `swell`).
 
@@ -102,6 +103,23 @@ food photography) composited under a **brand-colored duotone**, with the logo, o
 caption and a Swell badge. Drinks/edge cases fall back to a clean brand-gradient poster.
 Posters are disk-cached and pre-warmed on generation so the gallery is instant.
 
+### "Ask Swell" — a RAG assistant on every campaign
+A floating chat on the console and public artifact (`src/lib/assistant.ts`). It flattens
+the campaign into retrievable **fact chunks** (revenue projection, per-day offers with
+weather/event rationale, top sellers, strategy notes, how-to), ranks them against the
+owner's question, and answers **only from those facts** — no invented numbers.
+
+- **Keyless:** intent-matched answers computed straight from the campaign data.
+- **With `ANTHROPIC_API_KEY` or free `GROQ_API_KEY`:** full LLM generation grounded in the
+  retrieved chunks (classic RAG), same no-hallucination system prompt.
+
+### Report — sales & projection infographics
+The **Report** tab charts the story an owner actually asks for: last-30-days vs
+projected-next-30 (before/after with uplift), net sales by day-of-week, a projected
+daily-revenue curve with **live-event markers**, daypart mix with targeted windows
+highlighted, top items, payment mix — all dependency-free theme-aware SVG
+(`src/components/charts.tsx`).
+
 ## How the brain works
 
 Three inputs → one campaign:
@@ -161,7 +179,23 @@ annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-la
 ## Environment
 
 Copy `.env.example` → `.env.local`. All values are optional — see the file for details
-(`NEXT_PUBLIC_BRAIN_PASSWORD`, optional LLM keys, `SWELL_DB`).
+(`NEXT_PUBLIC_BRAIN_PASSWORD`, optional LLM keys, `DATABASE_URL`).
+
+## API keys & tokens — exactly what unlocks what
+
+**The app runs fully with zero keys.** Every key below is an optional upgrade; everything
+degrades gracefully without it.
+
+| Key | Cost | What it unlocks | Without it |
+|---|---|---|---|
+| *(none)* | — | Full pipeline: parsing, 10-agent brain, live weather/holidays/geocoding, posters, charts, assistant | — |
+| `GROQ_API_KEY` | free | LLM captions + LLM RAG-assistant answers | deterministic on-brand engine (still good) |
+| `ANTHROPIC_API_KEY` | paid | Claude-quality captions + assistant answers | same as above |
+| `TICKETMASTER_API_KEY` | free | **Real concerts & sports** near the venue in the Events Agent | public holidays only |
+| `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | free test mode | Real Stripe Checkout + billing portal | instant demo subscriptions |
+| `DATABASE_URL` (Neon) | free tier | Persistent production Postgres | embedded PGlite (local disk) |
+| Google Places API key | free tier | *(planned)* real Google-reviews infographics | not shown |
+| Meta / Google Ads OAuth app | your accounts | *(scaffolded)* one-click ad publishing, stops before paid spend | download-and-upload ad kit |
 
 ---
 
@@ -207,15 +241,21 @@ src/
     page.tsx                    landing
     console/page.tsx            Brain Console (gate + wizard + board)
     c/[slug]/page.tsx           public artifact (+ OG metadata)
-    api/…                       parse-csv, brand-kit, generate,
-                                campaigns, campaign-days, creative, sample-csv
+    pricing/ account/           subscription plans + billing dashboard
+    api/…                       parse-csv, brand-kit, generate, campaigns,
+                                campaign-days, creative, sample-csv,
+                                assistant, billing/*, stripe/webhook
   lib/
     orchestrator.ts          ← multi-agent pipeline + activity trace
     generator.ts project.ts  ← Analyst / Strategy / Revenue phases
     brand.ts marketplace.ts  ← Brand / Demand agents
+    context/                 ← Location / Weather / Events agents (live APIs)
     copy.ts                  ← Copywriter agent + guardrail
-    creative.ts food-images.ts ← Creative agent (posters)
+    creative.ts food-images.ts ← Creative agent (posters + ad kit)
+    assistant.ts             ← RAG assistant (facts → retrieval → answer)
+    billing/                 ← plans, Stripe, account session
     csv.ts db.ts sample.ts types.ts utils.ts
   components/
-    campaign-board.tsx  ui.tsx  modal.tsx  toaster.tsx  logo.tsx  theme-toggle.tsx
+    campaign-board.tsx  campaign-report.tsx  charts.tsx  assistant-widget.tsx
+    ui.tsx  modal.tsx  toaster.tsx  logo.tsx  theme-toggle.tsx
 ```
