@@ -9,8 +9,8 @@ persisted and published as a shareable public URL.
 This is the **operator side**: the Generator, the public Campaign Artifact, and the
 internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
 
-[![CI](https://github.com/rohitdvv/got60/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/got60/actions/workflows/ci.yml)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/got60&env=SWELL_SESSION_SECRET&envDescription=Random%20string%20that%20signs%20auth%20session%20cookies)
+[![CI](https://github.com/rohitdvv/swell/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/swell/actions/workflows/ci.yml)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/swell&env=SWELL_SESSION_SECRET&envDescription=Random%20string%20that%20signs%20auth%20session%20cookies)
 
 ![Landing](docs/landing.png)
 
@@ -220,7 +220,7 @@ module** to compile, so it deploys cleanly to Vercel serverless.
 **Go live on Vercel + Neon (free tiers), ~5 minutes:**
 
 1. **Create a Neon project** → copy the pooled connection string.
-2. **Import this repo into Vercel** ("New Project" → pick `rohitdvv/got60`).
+2. **Import this repo into Vercel** ("New Project" → pick `rohitdvv/swell`).
 3. **Set env vars** in Vercel → Settings → Environment Variables:
    - `DATABASE_URL` = your Neon string
    - `SWELL_SESSION_SECRET` (any random string — signs session cookies)
