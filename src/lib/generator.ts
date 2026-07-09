@@ -513,7 +513,11 @@ function buildStrategyNotes(
           .slice(0, 2)
           .join(", ")}) at protective ${band[0]}–${band[1]}% offers to drive trial without eroding margin.`
   );
-  if (mkt.in_marketplace) {
+  if (mkt.in_marketplace && mkt.simulated) {
+    notes.push(
+      `Modeled neighborhood demand (~${mkt.saves} saves, ~${mkt.past_redemptions} redemptions within ${mkt.neighborhood.radius_miles} mi, median basket $${mkt.neighborhood.median_basket}) — a design-partner preview until the Swell consumer app is live here.`
+    );
+  } else if (mkt.in_marketplace) {
     notes.push(
       `Reading ${mkt.saves} saves and ${mkt.past_redemptions} prior in-app redemptions within ${mkt.neighborhood.radius_miles} mi (median basket ${`$${mkt.neighborhood.median_basket}`}, ${mkt.neighborhood.dominant_age_band}).`
     );

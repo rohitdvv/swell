@@ -11,6 +11,7 @@ const AGE_BANDS = ["21–29", "25–34", "28–38", "30–42", "35–48"];
 export function neutralSignals(avgBasket: number): MarketplaceSignals {
   return {
     in_marketplace: false,
+    simulated: false,
     saves: 0,
     favorites: 0,
     past_redemptions: 0,
@@ -59,10 +60,13 @@ export function synthesizeMarketplaceSignals(
       `Soft organic demand (index ${organic_demand_index.toFixed(2)}) — hero items + urgency to drive redemptions.`
     );
   else notes.push(`Balanced organic demand (index ${organic_demand_index.toFixed(2)}).`);
-  notes.push(`${saves} saves · ${favorites} favorites · ${past_redemptions} past redemptions in-app.`);
+  notes.push(
+    `Simulated preview: ~${saves} saves · ${favorites} favorites · ${past_redemptions} redemptions (modeled from neighborhood + sales until the Swell consumer app is live here).`
+  );
 
   return {
     in_marketplace: true,
+    simulated: true,
     saves,
     favorites,
     past_redemptions,

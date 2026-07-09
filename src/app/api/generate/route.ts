@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       startDate: body?.startDate,
     });
 
-    repo.upsertRestaurant({
+    await repo.upsertRestaurant({
       id: campaign.restaurant_id,
       slug: campaign.restaurant_slug,
       name: campaign.restaurant_name,
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       marketplace: campaign.marketplace,
       sales,
     });
-    repo.createCampaign(campaign, days);
+    await repo.createCampaign(campaign, days);
 
     // Pre-render every poster in the background so the gallery is instant.
     void prewarmCreatives(days, campaign);

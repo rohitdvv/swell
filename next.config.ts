@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Pin the workspace root (multiple lockfiles exist above this dir).
   turbopack: { root: __dirname },
-  // Native / heavy server-only modules must not be bundled by webpack/turbopack.
-  serverExternalPackages: ["better-sqlite3", "sharp", "satori"],
+  // Heavy server-only modules must not be bundled by webpack/turbopack.
+  serverExternalPackages: ["sharp", "@electric-sql/pglite", "@neondatabase/serverless"],
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },

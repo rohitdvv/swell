@@ -290,14 +290,24 @@ function Console() {
             <StepCard n={3} title="Marketplace read" icon={<Store className="size-4" />}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="max-w-sm text-sm text-fg-muted">
-                  Blend live consumer demand (saves, redemptions, neighborhood mix) with sales history.
+                  Blend consumer demand (neighborhood mix, saves, redemptions) with sales history.
+                  {marketplace === "demo" ? (
+                    <span className="mt-1 block text-xs text-fg-subtle">
+                      Simulated preview — figures are modeled from neighborhood + sales, clearly
+                      labeled &ldquo;simulated&rdquo; until the Swell consumer app is live here.
+                    </span>
+                  ) : (
+                    <span className="mt-1 block text-xs text-fg-subtle">
+                      Sales-only — no marketplace estimates; every number is from the upload.
+                    </span>
+                  )}
                 </p>
                 <Segmented
                   value={marketplace}
                   onChange={setMarketplace}
                   options={[
-                    { value: "demo", label: "Design-partner" },
-                    { value: "neutral", label: "Neutral" },
+                    { value: "demo", label: "Simulated demand" },
+                    { value: "neutral", label: "Sales-only" },
                   ]}
                 />
               </div>

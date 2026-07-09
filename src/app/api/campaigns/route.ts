@@ -5,6 +5,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const campaigns = repo.listCampaigns();
+  const campaigns = await repo.listCampaigns();
   return NextResponse.json({ campaigns });
 }

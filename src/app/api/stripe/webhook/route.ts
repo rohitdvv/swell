@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         const plan = (s.metadata?.plan as PlanId) || "pro";
         const interval = (s.metadata?.interval as Interval) || "monthly";
         if (email) {
-          repo.upsertSubscription({
+          await repo.upsertSubscription({
             email,
             plan,
             interval,
@@ -48,9 +48,9 @@ export async function POST(request: Request) {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
-        const existing = repo.getSubscriptionByStripeId(sub.id);
+        const existing = await repo.getSubscriptionByStripeId(sub.id);
         if (existing) {
-          repo.upsertSubscription({
+          await repo.upsertSubscription({
             ...existing,
             status: sub.status === "active" || sub.status === "trialing" ? "active" : "canceled",
             current_period_end: sub.items?.data?.[0]?.current_period_end

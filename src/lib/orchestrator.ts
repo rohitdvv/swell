@@ -91,15 +91,15 @@ export async function orchestrate(
   const marketplace = await track(
     "Demand Agent",
     "Reads live marketplace demand (saves, redemptions, neighborhood)",
-    () => {
+    async () => {
       const mode = input.marketplace || "auto";
       if (mode === "neutral") return neutralSignals(avgBasket);
       if (mode === "demo") {
         const s = synthesizeMarketplaceSignals(slug, avgBasket);
-        repo.putMarketplaceSignal(slug, s);
+        await repo.putMarketplaceSignal(slug, s);
         return s;
       }
-      return repo.getMarketplaceSignal(slug) ?? neutralSignals(avgBasket);
+      return (await repo.getMarketplaceSignal(slug)) ?? neutralSignals(avgBasket);
     },
     (m) =>
       m.in_marketplace

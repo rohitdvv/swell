@@ -50,5 +50,5 @@ export type Account = {
 export async function getAccount(): Promise<Account> {
   const email = await getAccountEmail();
   if (!email) return { email: null, subscription: null };
-  return { email, subscription: repo.getSubscription(email) };
+  return { email, subscription: await repo.getSubscription(email) };
 }

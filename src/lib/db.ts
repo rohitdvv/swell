@@ -1,5 +1,4 @@
 import "server-only";
-import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -12,36 +11,98 @@ import type {
   Subscription,
 } from "./types";
 
-// ------------------------------------------------------------
-// Connection (singleton across HMR reloads)
-// ------------------------------------------------------------
-function resolveDbPath(): string {
-  const explicit = process.env.SWELL_DB;
-  if (explicit) return explicit;
-  const dir = path.join(process.cwd(), "data");
+// ============================================================
+// Data layer — Postgres.
+//   • Local dev: PGlite (embedded Postgres, no server, WASM)
+//   • Production: Neon / any Postgres via DATABASE_URL
+// Same SQL both places. No native modules → serverless-friendly.
+// ============================================================
+
+type Row = Record<string, unknown>;
+type Client = { query: (text: string, params?: unknown[]) => Promise<{ rows: Row[] }> };
+
+type Backend = {
+  client: Client;
+  kind: "pglite" | "neon";
+  ready: Promise<void>;
+};
+
+const g = globalThis as unknown as { __swell_pg?: Backend };
+
+function connectionString(): string | undefined {
+  return process.env.DATABASE_URL || process.env.POSTGRES_URL;
+}
+
+async function makeBackend(): Promise<Backend> {
+  const url = connectionString();
+  if (url) {
+    const { Pool } = await import("@neondatabase/serverless");
+    const pool = new Pool({ connectionString: url });
+    const client: Client = { query: (text, params) => pool.query(text, params) };
+    const backend: Backend = { client, kind: "neon", ready: Promise.resolve() };
+    backend.ready = init(client, "neon");
+    return backend;
+  }
+  const { PGlite } = await import("@electric-sql/pglite");
+  let dir = path.join(process.cwd(), "data", "pg");
   try {
     fs.mkdirSync(dir, { recursive: true });
-    return path.join(dir, "swell.db");
   } catch {
-    // Read-only FS (e.g. serverless) → fall back to tmp.
-    return path.join("/tmp", "swell.db");
+    dir = path.join("/tmp", "swell-pg");
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const pg = new PGlite(dir);
+  const client: Client = { query: (text, params) => pg.query(text, params as unknown[]) };
+  const backend: Backend = { client, kind: "pglite", ready: Promise.resolve() };
+  backend.ready = init(client, "pglite");
+  return backend;
+}
+
+function getBackend(): Backend {
+  if (!g.__swell_pg) {
+    // Kick off connection + init once; queries await ready.
+    const b: Backend = { client: null as unknown as Client, kind: "pglite", ready: Promise.resolve() };
+    g.__swell_pg = b;
+    b.ready = makeBackend().then((real) => {
+      b.client = real.client;
+      b.kind = real.kind;
+      return real.ready;
+    });
+  }
+  return g.__swell_pg;
+}
+
+async function q(text: string, params: unknown[] = []): Promise<Row[]> {
+  const b = getBackend();
+  await b.ready;
+  const { rows } = await b.client.query(text, params);
+  return rows;
+}
+async function one(text: string, params: unknown[] = []): Promise<Row | null> {
+  const rows = await q(text, params);
+  return rows[0] ?? null;
+}
+
+/** Run a set of statements in a transaction (used for regenerate-replaces). */
+async function withTx(fn: (run: (t: string, p?: unknown[]) => Promise<void>) => Promise<void>) {
+  const b = getBackend();
+  await b.ready;
+  const run = async (t: string, p: unknown[] = []) => {
+    await b.client.query(t, p);
+  };
+  await b.client.query("BEGIN");
+  try {
+    await fn(run);
+    await b.client.query("COMMIT");
+  } catch (e) {
+    await b.client.query("ROLLBACK");
+    throw e;
   }
 }
 
-const g = globalThis as unknown as { __swell_db?: Database.Database };
-
-function getDb(): Database.Database {
-  if (g.__swell_db) return g.__swell_db;
-  const db = new Database(resolveDbPath());
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  init(db);
-  g.__swell_db = db;
-  return db;
-}
-
-function init(db: Database.Database) {
-  db.exec(`
+async function init(client: Client, kind: Backend["kind"]): Promise<void> {
+  const exec = (t: string) => client.query(t);
+  await exec(`
     CREATE TABLE IF NOT EXISTS restaurants (
       id TEXT PRIMARY KEY,
       slug TEXT UNIQUE NOT NULL,
@@ -51,8 +112,8 @@ function init(db: Database.Database) {
       marketplace_json TEXT,
       sales_json TEXT,
       created_at TEXT NOT NULL
-    );
-
+    )`);
+  await exec(`
     CREATE TABLE IF NOT EXISTS campaigns (
       id TEXT PRIMARY KEY,
       restaurant_id TEXT NOT NULL,
@@ -77,11 +138,11 @@ function init(db: Database.Database) {
       sales_json TEXT,
       created_at TEXT NOT NULL,
       published_at TEXT
-    );
-
+    )`);
+  await exec(`
     CREATE TABLE IF NOT EXISTS campaign_days (
       id TEXT PRIMARY KEY,
-      campaign_id TEXT NOT NULL,
+      campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
       day_index INTEGER NOT NULL,
       date TEXT NOT NULL,
       dow TEXT NOT NULL,
@@ -98,23 +159,19 @@ function init(db: Database.Database) {
       event_json TEXT,
       context_note TEXT,
       expected_covers REAL NOT NULL DEFAULT 0,
-      edited INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_days_campaign ON campaign_days(campaign_id);
-
-    -- read-only mirror of the existing consumer marketplace
+      edited INTEGER NOT NULL DEFAULT 0
+    )`);
+  await exec(`CREATE INDEX IF NOT EXISTS idx_days_campaign ON campaign_days(campaign_id)`);
+  await exec(`
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
       json TEXT NOT NULL
-    );
-
-    -- subscription billing (email-keyed account)
+    )`);
+  await exec(`
     CREATE TABLE IF NOT EXISTS subscriptions (
       email TEXT PRIMARY KEY,
       plan TEXT NOT NULL,
-      interval TEXT NOT NULL DEFAULT 'monthly',
+      "interval" TEXT NOT NULL DEFAULT 'monthly',
       status TEXT NOT NULL DEFAULT 'active',
       mode TEXT NOT NULL DEFAULT 'demo',
       current_period_end TEXT,
@@ -122,113 +179,93 @@ function init(db: Database.Database) {
       stripe_subscription_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
-  `);
-
-  // Lightweight migrations for pre-existing databases.
-  const migrate = (table: string, cols: string[]) => {
-    for (const col of cols) {
-      try {
-        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`);
-      } catch {
-        /* column already exists */
-      }
+    )`);
+  // Idempotent migrations (Postgres supports IF NOT EXISTS on ADD COLUMN)
+  const cols: Array<[string, string]> = [
+    ["campaigns", "agent_trace_json TEXT"],
+    ["campaigns", "location TEXT"],
+    ["campaigns", "context_json TEXT"],
+    ["campaign_days", "weather_json TEXT"],
+    ["campaign_days", "event_json TEXT"],
+    ["campaign_days", "context_note TEXT"],
+    ["campaign_days", "expected_covers REAL NOT NULL DEFAULT 0"],
+  ];
+  for (const [table, col] of cols) {
+    try {
+      await exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col}`);
+    } catch {
+      /* older engines */
     }
-  };
-  migrate("campaigns", ["agent_trace_json TEXT", "location TEXT", "context_json TEXT"]);
-  migrate("campaign_days", [
-    "weather_json TEXT",
-    "event_json TEXT",
-    "context_note TEXT",
-    "expected_covers REAL NOT NULL DEFAULT 0",
-  ]);
+  }
+  void kind;
 }
 
 // ------------------------------------------------------------
-// Row <-> domain mappers
+// Row -> domain mappers
 // ------------------------------------------------------------
-type CampaignRow = {
-  id: string;
-  restaurant_id: string;
-  slug: string;
-  restaurant_slug: string;
-  restaurant_name: string;
-  month: string;
-  start_date: string;
-  title: string;
-  status: string;
-  paused: number;
-  archived: number;
-  projected_revenue: number;
-  projected_redemptions: number;
-  baseline_revenue: number;
-  strategy_notes_json: string | null;
-  agent_trace_json: string | null;
-  location: string | null;
-  context_json: string | null;
-  brand_json: string | null;
-  marketplace_json: string | null;
-  sales_json: string | null;
-  created_at: string;
-  published_at: string | null;
-};
+function num(v: unknown): number {
+  return typeof v === "number" ? v : Number(v ?? 0);
+}
+function parse<T>(v: unknown, fallback: T): T {
+  return v ? (JSON.parse(v as string) as T) : fallback;
+}
 
-function rowToCampaign(r: CampaignRow): Campaign {
+function rowToCampaign(r: Row): Campaign {
   return {
-    id: r.id,
-    restaurant_id: r.restaurant_id,
-    slug: r.slug,
-    restaurant_slug: r.restaurant_slug,
-    restaurant_name: r.restaurant_name,
-    month: r.month,
-    start_date: r.start_date,
-    title: r.title,
+    id: r.id as string,
+    restaurant_id: r.restaurant_id as string,
+    slug: r.slug as string,
+    restaurant_slug: r.restaurant_slug as string,
+    restaurant_name: r.restaurant_name as string,
+    month: r.month as string,
+    start_date: r.start_date as string,
+    title: r.title as string,
     status: r.status as Campaign["status"],
-    paused: !!r.paused,
-    projected_revenue: r.projected_revenue,
-    projected_redemptions: r.projected_redemptions,
-    baseline_revenue: r.baseline_revenue,
-    strategy_notes: r.strategy_notes_json ? JSON.parse(r.strategy_notes_json) : [],
-    agent_trace: r.agent_trace_json ? JSON.parse(r.agent_trace_json) : [],
-    location: r.location ?? null,
-    context: r.context_json ? JSON.parse(r.context_json) : null,
-    brand: r.brand_json ? JSON.parse(r.brand_json) : ({} as BrandKit),
-    marketplace: r.marketplace_json ? JSON.parse(r.marketplace_json) : ({} as MarketplaceSignals),
-    sales_summary: r.sales_json ? JSON.parse(r.sales_json) : ({} as ParsedSalesSummary),
-    created_at: r.created_at,
-    published_at: r.published_at,
+    paused: !!num(r.paused),
+    projected_revenue: num(r.projected_revenue),
+    projected_redemptions: num(r.projected_redemptions),
+    baseline_revenue: num(r.baseline_revenue),
+    strategy_notes: parse(r.strategy_notes_json, [] as string[]),
+    agent_trace: parse(r.agent_trace_json, [] as Campaign["agent_trace"]),
+    location: (r.location as string) ?? null,
+    context: parse(r.context_json, null as Campaign["context"]),
+    brand: parse(r.brand_json, {} as BrandKit),
+    marketplace: parse(r.marketplace_json, {} as MarketplaceSignals),
+    sales_summary: parse(r.sales_json, {} as ParsedSalesSummary),
+    created_at: r.created_at as string,
+    published_at: (r.published_at as string) ?? null,
   };
 }
 
-function rowToDay(r: Record<string, unknown>): CampaignDay {
+function rowToDay(r: Row): CampaignDay {
   return {
     id: r.id as string,
     campaign_id: r.campaign_id as string,
-    day_index: r.day_index as number,
+    day_index: num(r.day_index),
     date: r.date as string,
     dow: r.dow as CampaignDay["dow"],
     daypart: r.daypart as CampaignDay["daypart"],
     discount_window: r.discount_window as string,
     item: r.item as string,
-    pct_off: r.pct_off as number,
-    projected_redemptions: r.projected_redemptions as number,
-    projected_revenue: r.projected_revenue as number,
+    pct_off: num(r.pct_off),
+    projected_redemptions: num(r.projected_redemptions),
+    projected_revenue: num(r.projected_revenue),
     copy: r.copy as string,
     creative_url: r.creative_url as string,
     rationale: (r.rationale as string) ?? "",
-    weather: r.weather_json ? JSON.parse(r.weather_json as string) : null,
-    event: r.event_json ? JSON.parse(r.event_json as string) : null,
+    weather: parse(r.weather_json, null as CampaignDay["weather"]),
+    event: parse(r.event_json, null as CampaignDay["event"]),
     context_note: (r.context_note as string) ?? null,
-    expected_covers: (r.expected_covers as number) ?? 0,
-    edited: !!r.edited,
+    expected_covers: num(r.expected_covers),
+    edited: !!num(r.edited),
   };
 }
 
 // ------------------------------------------------------------
-// Repository
+// Repository (async)
 // ------------------------------------------------------------
 export const repo = {
-  upsertRestaurant(input: {
+  async upsertRestaurant(input: {
     id: string;
     slug: string;
     name: string;
@@ -236,227 +273,197 @@ export const repo = {
     brand?: BrandKit;
     marketplace?: MarketplaceSignals;
     sales?: ParsedSalesSummary;
-  }) {
-    const db = getDb();
-    db.prepare(
+  }): Promise<void> {
+    await q(
       `INSERT INTO restaurants (id, slug, name, website_url, brand_json, marketplace_json, sales_json, created_at)
-       VALUES (@id, @slug, @name, @website_url, @brand_json, @marketplace_json, @sales_json, @created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT(slug) DO UPDATE SET
-         name=excluded.name,
-         website_url=excluded.website_url,
-         brand_json=excluded.brand_json,
-         marketplace_json=excluded.marketplace_json,
-         sales_json=excluded.sales_json`
-    ).run({
-      id: input.id,
-      slug: input.slug,
-      name: input.name,
-      website_url: input.website_url ?? null,
-      brand_json: input.brand ? JSON.stringify(input.brand) : null,
-      marketplace_json: input.marketplace ? JSON.stringify(input.marketplace) : null,
-      sales_json: input.sales ? JSON.stringify(input.sales) : null,
-      created_at: new Date().toISOString(),
-    });
+         name=EXCLUDED.name, website_url=EXCLUDED.website_url, brand_json=EXCLUDED.brand_json,
+         marketplace_json=EXCLUDED.marketplace_json, sales_json=EXCLUDED.sales_json`,
+      [
+        input.id,
+        input.slug,
+        input.name,
+        input.website_url ?? null,
+        input.brand ? JSON.stringify(input.brand) : null,
+        input.marketplace ? JSON.stringify(input.marketplace) : null,
+        input.sales ? JSON.stringify(input.sales) : null,
+        new Date().toISOString(),
+      ]
+    );
   },
 
-  createCampaign(campaign: Campaign, days: CampaignDay[]) {
-    const db = getDb();
-    const insertCampaign = db.prepare(`
-      INSERT INTO campaigns (
-        id, restaurant_id, slug, restaurant_slug, restaurant_name, month, start_date, title,
-        status, paused, archived, projected_revenue, projected_redemptions, baseline_revenue,
-        strategy_notes_json, agent_trace_json, location, context_json, brand_json, marketplace_json, sales_json, created_at, published_at
-      ) VALUES (
-        @id, @restaurant_id, @slug, @restaurant_slug, @restaurant_name, @month, @start_date, @title,
-        @status, @paused, 0, @projected_revenue, @projected_redemptions, @baseline_revenue,
-        @strategy_notes_json, @agent_trace_json, @location, @context_json, @brand_json, @marketplace_json, @sales_json, @created_at, @published_at
-      )
-    `);
-    const insertDay = db.prepare(`
-      INSERT INTO campaign_days (
-        id, campaign_id, day_index, date, dow, daypart, discount_window, item, pct_off,
-        projected_redemptions, projected_revenue, copy, creative_url, rationale,
-        weather_json, event_json, context_note, expected_covers, edited
-      ) VALUES (
-        @id, @campaign_id, @day_index, @date, @dow, @daypart, @discount_window, @item, @pct_off,
-        @projected_redemptions, @projected_revenue, @copy, @creative_url, @rationale,
-        @weather_json, @event_json, @context_note, @expected_covers, @edited
-      )
-    `);
-    const tx = db.transaction(() => {
-      // Regenerate replaces: drop any prior campaign with the same public slug.
-      db.prepare(`DELETE FROM campaigns WHERE slug = ?`).run(campaign.slug);
-      insertCampaign.run({
-        id: campaign.id,
-        restaurant_id: campaign.restaurant_id,
-        slug: campaign.slug,
-        restaurant_slug: campaign.restaurant_slug,
-        restaurant_name: campaign.restaurant_name,
-        month: campaign.month,
-        start_date: campaign.start_date,
-        title: campaign.title,
-        status: campaign.status,
-        paused: campaign.paused ? 1 : 0,
-        projected_revenue: campaign.projected_revenue,
-        projected_redemptions: campaign.projected_redemptions,
-        baseline_revenue: campaign.baseline_revenue,
-        strategy_notes_json: JSON.stringify(campaign.strategy_notes),
-        agent_trace_json: JSON.stringify(campaign.agent_trace ?? []),
-        location: campaign.location ?? null,
-        context_json: campaign.context ? JSON.stringify(campaign.context) : null,
-        brand_json: JSON.stringify(campaign.brand),
-        marketplace_json: JSON.stringify(campaign.marketplace),
-        sales_json: JSON.stringify(campaign.sales_summary),
-        created_at: campaign.created_at,
-        published_at: campaign.published_at,
-      });
+  async createCampaign(campaign: Campaign, days: CampaignDay[]): Promise<void> {
+    await withTx(async (run) => {
+      await run(`DELETE FROM campaigns WHERE slug = $1`, [campaign.slug]);
+      await run(
+        `INSERT INTO campaigns (
+          id, restaurant_id, slug, restaurant_slug, restaurant_name, month, start_date, title,
+          status, paused, archived, projected_revenue, projected_redemptions, baseline_revenue,
+          strategy_notes_json, agent_trace_json, location, context_json,
+          brand_json, marketplace_json, sales_json, created_at, published_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        [
+          campaign.id,
+          campaign.restaurant_id,
+          campaign.slug,
+          campaign.restaurant_slug,
+          campaign.restaurant_name,
+          campaign.month,
+          campaign.start_date,
+          campaign.title,
+          campaign.status,
+          campaign.paused ? 1 : 0,
+          campaign.projected_revenue,
+          campaign.projected_redemptions,
+          campaign.baseline_revenue,
+          JSON.stringify(campaign.strategy_notes),
+          JSON.stringify(campaign.agent_trace ?? []),
+          campaign.location ?? null,
+          campaign.context ? JSON.stringify(campaign.context) : null,
+          JSON.stringify(campaign.brand),
+          JSON.stringify(campaign.marketplace),
+          JSON.stringify(campaign.sales_summary),
+          campaign.created_at,
+          campaign.published_at,
+        ]
+      );
       for (const d of days) {
-        insertDay.run({
-          id: d.id,
-          campaign_id: d.campaign_id,
-          day_index: d.day_index,
-          date: d.date,
-          dow: d.dow,
-          daypart: d.daypart,
-          discount_window: d.discount_window,
-          item: d.item,
-          pct_off: d.pct_off,
-          projected_redemptions: d.projected_redemptions,
-          projected_revenue: d.projected_revenue,
-          copy: d.copy,
-          creative_url: d.creative_url,
-          rationale: d.rationale,
-          weather_json: d.weather ? JSON.stringify(d.weather) : null,
-          event_json: d.event ? JSON.stringify(d.event) : null,
-          context_note: d.context_note ?? null,
-          expected_covers: d.expected_covers ?? 0,
-          edited: d.edited ? 1 : 0,
-        });
+        await run(
+          `INSERT INTO campaign_days (
+            id, campaign_id, day_index, date, dow, daypart, discount_window, item, pct_off,
+            projected_redemptions, projected_revenue, copy, creative_url, rationale,
+            weather_json, event_json, context_note, expected_covers, edited
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+          [
+            d.id,
+            d.campaign_id,
+            d.day_index,
+            d.date,
+            d.dow,
+            d.daypart,
+            d.discount_window,
+            d.item,
+            d.pct_off,
+            d.projected_redemptions,
+            d.projected_revenue,
+            d.copy,
+            d.creative_url,
+            d.rationale,
+            d.weather ? JSON.stringify(d.weather) : null,
+            d.event ? JSON.stringify(d.event) : null,
+            d.context_note ?? null,
+            d.expected_covers ?? 0,
+            d.edited ? 1 : 0,
+          ]
+        );
       }
     });
-    tx();
   },
 
-  getCampaignBySlug(slug: string): CampaignWithDays | null {
-    const db = getDb();
-    const row = db
-      .prepare(`SELECT * FROM campaigns WHERE slug = ? AND archived = 0`)
-      .get(slug) as CampaignRow | undefined;
+  async getCampaignBySlug(slug: string): Promise<CampaignWithDays | null> {
+    const row = await one(`SELECT * FROM campaigns WHERE slug=$1 AND archived=0`, [slug]);
     if (!row) return null;
-    const days = (db
-      .prepare(`SELECT * FROM campaign_days WHERE campaign_id = ? ORDER BY day_index ASC`)
-      .all(row.id) as Record<string, unknown>[]).map(rowToDay);
+    const days = (
+      await q(`SELECT * FROM campaign_days WHERE campaign_id=$1 ORDER BY day_index ASC`, [row.id])
+    ).map(rowToDay);
     return { ...rowToCampaign(row), days };
   },
 
-  getCampaignById(id: string): CampaignWithDays | null {
-    const db = getDb();
-    const row = db.prepare(`SELECT * FROM campaigns WHERE id = ?`).get(id) as
-      | CampaignRow
-      | undefined;
+  async getCampaignById(id: string): Promise<CampaignWithDays | null> {
+    const row = await one(`SELECT * FROM campaigns WHERE id=$1`, [id]);
     if (!row) return null;
-    const days = (db
-      .prepare(`SELECT * FROM campaign_days WHERE campaign_id = ? ORDER BY day_index ASC`)
-      .all(row.id) as Record<string, unknown>[]).map(rowToDay);
+    const days = (
+      await q(`SELECT * FROM campaign_days WHERE campaign_id=$1 ORDER BY day_index ASC`, [row.id])
+    ).map(rowToDay);
     return { ...rowToCampaign(row), days };
   },
 
-  getDayById(id: string): CampaignDay | null {
-    const row = getDb().prepare(`SELECT * FROM campaign_days WHERE id = ?`).get(id) as
-      | Record<string, unknown>
-      | undefined;
+  async getDayById(id: string): Promise<CampaignDay | null> {
+    const row = await one(`SELECT * FROM campaign_days WHERE id=$1`, [id]);
     return row ? rowToDay(row) : null;
   },
 
-  listCampaigns(): Campaign[] {
-    const db = getDb();
-    const rows = db
-      .prepare(`SELECT * FROM campaigns WHERE archived = 0 ORDER BY created_at DESC`)
-      .all() as CampaignRow[];
+  async listCampaigns(): Promise<Campaign[]> {
+    const rows = await q(`SELECT * FROM campaigns WHERE archived=0 ORDER BY created_at DESC`);
     return rows.map(rowToCampaign);
   },
 
-  updateDay(id: string, patch: Partial<CampaignDay>): CampaignDay | null {
-    const db = getDb();
-    const existing = db.prepare(`SELECT * FROM campaign_days WHERE id = ?`).get(id) as
-      | Record<string, unknown>
-      | undefined;
+  async updateDay(id: string, patch: Partial<CampaignDay>): Promise<CampaignDay | null> {
+    const existing = await one(`SELECT * FROM campaign_days WHERE id=$1`, [id]);
     if (!existing) return null;
     const merged = { ...rowToDay(existing), ...patch, edited: true };
-    db.prepare(
+    await q(
       `UPDATE campaign_days SET
-        daypart=@daypart, discount_window=@discount_window, item=@item, pct_off=@pct_off,
-        projected_redemptions=@projected_redemptions, projected_revenue=@projected_revenue,
-        copy=@copy, creative_url=@creative_url, rationale=@rationale, edited=1
-       WHERE id=@id`
-    ).run({
-      id,
-      daypart: merged.daypart,
-      discount_window: merged.discount_window,
-      item: merged.item,
-      pct_off: merged.pct_off,
-      projected_redemptions: merged.projected_redemptions,
-      projected_revenue: merged.projected_revenue,
-      copy: merged.copy,
-      creative_url: merged.creative_url,
-      rationale: merged.rationale,
-    });
-    this.recomputeCampaignTotals(merged.campaign_id);
+        daypart=$1, discount_window=$2, item=$3, pct_off=$4,
+        projected_redemptions=$5, projected_revenue=$6, copy=$7, creative_url=$8,
+        rationale=$9, edited=1
+       WHERE id=$10`,
+      [
+        merged.daypart,
+        merged.discount_window,
+        merged.item,
+        merged.pct_off,
+        merged.projected_redemptions,
+        merged.projected_revenue,
+        merged.copy,
+        merged.creative_url,
+        merged.rationale,
+        id,
+      ]
+    );
+    await this.recomputeCampaignTotals(merged.campaign_id);
     return merged;
   },
 
-  recomputeCampaignTotals(campaignId: string) {
-    const db = getDb();
-    const agg = db
-      .prepare(
-        `SELECT COALESCE(SUM(projected_revenue),0) rev, COALESCE(SUM(projected_redemptions),0) red
-         FROM campaign_days WHERE campaign_id = ?`
-      )
-      .get(campaignId) as { rev: number; red: number };
-    db.prepare(
-      `UPDATE campaigns SET projected_revenue=?, projected_redemptions=? WHERE id=?`
-    ).run(agg.rev, agg.red, campaignId);
+  async recomputeCampaignTotals(campaignId: string): Promise<void> {
+    const agg = await one(
+      `SELECT COALESCE(SUM(projected_revenue),0) rev, COALESCE(SUM(projected_redemptions),0) red
+       FROM campaign_days WHERE campaign_id=$1`,
+      [campaignId]
+    );
+    await q(`UPDATE campaigns SET projected_revenue=$1, projected_redemptions=$2 WHERE id=$3`, [
+      num(agg?.rev),
+      num(agg?.red),
+      campaignId,
+    ]);
   },
 
-  setPaused(id: string, paused: boolean) {
-    getDb().prepare(`UPDATE campaigns SET paused=? WHERE id=?`).run(paused ? 1 : 0, id);
+  async setPaused(id: string, paused: boolean): Promise<void> {
+    await q(`UPDATE campaigns SET paused=$1 WHERE id=$2`, [paused ? 1 : 0, id]);
   },
 
-  publish(id: string) {
-    getDb()
-      .prepare(`UPDATE campaigns SET status='published', published_at=? WHERE id=?`)
-      .run(new Date().toISOString(), id);
+  async publish(id: string): Promise<void> {
+    await q(`UPDATE campaigns SET status='published', published_at=$1 WHERE id=$2`, [
+      new Date().toISOString(),
+      id,
+    ]);
   },
 
-  archive(id: string) {
-    getDb().prepare(`UPDATE campaigns SET archived=1 WHERE id=?`).run(id);
+  async archive(id: string): Promise<void> {
+    await q(`UPDATE campaigns SET archived=1 WHERE id=$1`, [id]);
   },
 
-  deleteCampaign(id: string) {
-    getDb().prepare(`DELETE FROM campaigns WHERE id=?`).run(id);
+  async deleteCampaign(id: string): Promise<void> {
+    await q(`DELETE FROM campaigns WHERE id=$1`, [id]);
   },
 
-  getMarketplaceSignal(key: string): MarketplaceSignals | null {
-    const row = getDb()
-      .prepare(`SELECT json FROM marketplace_signals WHERE restaurant_key = ?`)
-      .get(key) as { json: string } | undefined;
-    return row ? (JSON.parse(row.json) as MarketplaceSignals) : null;
+  async getMarketplaceSignal(key: string): Promise<MarketplaceSignals | null> {
+    const row = await one(`SELECT json FROM marketplace_signals WHERE restaurant_key=$1`, [key]);
+    return row ? (JSON.parse(row.json as string) as MarketplaceSignals) : null;
   },
 
-  putMarketplaceSignal(key: string, signal: MarketplaceSignals) {
-    getDb()
-      .prepare(
-        `INSERT INTO marketplace_signals (restaurant_key, json) VALUES (?, ?)
-         ON CONFLICT(restaurant_key) DO UPDATE SET json=excluded.json`
-      )
-      .run(key, JSON.stringify(signal));
+  async putMarketplaceSignal(key: string, signal: MarketplaceSignals): Promise<void> {
+    await q(
+      `INSERT INTO marketplace_signals (restaurant_key, json) VALUES ($1,$2)
+       ON CONFLICT(restaurant_key) DO UPDATE SET json=EXCLUDED.json`,
+      [key, JSON.stringify(signal)]
+    );
   },
 
   // ---- subscriptions ----
-  getSubscription(email: string): Subscription | null {
-    const row = getDb()
-      .prepare(`SELECT * FROM subscriptions WHERE email = ?`)
-      .get(email.toLowerCase()) as Record<string, unknown> | undefined;
+  async getSubscription(email: string): Promise<Subscription | null> {
+    const row = await one(`SELECT * FROM subscriptions WHERE email=$1`, [email.toLowerCase()]);
     if (!row) return null;
     return {
       email: row.email as string,
@@ -470,36 +477,38 @@ export const repo = {
     };
   },
 
-  upsertSubscription(sub: Subscription) {
+  async upsertSubscription(sub: Subscription): Promise<void> {
     const now = new Date().toISOString();
-    getDb()
-      .prepare(
-        `INSERT INTO subscriptions
-          (email, plan, interval, status, mode, current_period_end, stripe_customer_id, stripe_subscription_id, created_at, updated_at)
-         VALUES (@email, @plan, @interval, @status, @mode, @current_period_end, @stripe_customer_id, @stripe_subscription_id, @now, @now)
-         ON CONFLICT(email) DO UPDATE SET
-           plan=excluded.plan, interval=excluded.interval, status=excluded.status, mode=excluded.mode,
-           current_period_end=excluded.current_period_end, stripe_customer_id=excluded.stripe_customer_id,
-           stripe_subscription_id=excluded.stripe_subscription_id, updated_at=excluded.updated_at`
-      )
-      .run({ ...sub, email: sub.email.toLowerCase(), now });
+    await q(
+      `INSERT INTO subscriptions
+        (email, plan, "interval", status, mode, current_period_end, stripe_customer_id, stripe_subscription_id, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+       ON CONFLICT(email) DO UPDATE SET
+         plan=EXCLUDED.plan, "interval"=EXCLUDED."interval", status=EXCLUDED.status, mode=EXCLUDED.mode,
+         current_period_end=EXCLUDED.current_period_end, stripe_customer_id=EXCLUDED.stripe_customer_id,
+         stripe_subscription_id=EXCLUDED.stripe_subscription_id, updated_at=EXCLUDED.updated_at`,
+      [
+        sub.email.toLowerCase(),
+        sub.plan,
+        sub.interval,
+        sub.status,
+        sub.mode,
+        sub.current_period_end,
+        sub.stripe_customer_id,
+        sub.stripe_subscription_id,
+        now,
+      ]
+    );
   },
 
-  getSubscriptionByStripeId(subId: string): Subscription | null {
-    const row = getDb()
-      .prepare(`SELECT email FROM subscriptions WHERE stripe_subscription_id = ?`)
-      .get(subId) as { email: string } | undefined;
-    return row ? this.getSubscription(row.email) : null;
+  async getSubscriptionByStripeId(subId: string): Promise<Subscription | null> {
+    const row = await one(`SELECT email FROM subscriptions WHERE stripe_subscription_id=$1`, [subId]);
+    return row ? this.getSubscription(row.email as string) : null;
   },
 
-  /** Campaigns created in the current calendar month (usage metering). */
-  countCampaignsThisMonth(): number {
-    const prefix = new Date().toISOString().slice(0, 7); // YYYY-MM
-    const row = getDb()
-      .prepare(`SELECT COUNT(*) c FROM campaigns WHERE substr(created_at,1,7) = ?`)
-      .get(prefix) as { c: number };
-    return row.c;
+  async countCampaignsThisMonth(): Promise<number> {
+    const prefix = new Date().toISOString().slice(0, 7);
+    const row = await one(`SELECT COUNT(*) c FROM campaigns WHERE substr(created_at,1,7)=$1`, [prefix]);
+    return num(row?.c);
   },
 };
-
-export { getDb };

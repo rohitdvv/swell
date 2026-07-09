@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     if (!email) return NextResponse.json({ ok: false });
 
     // Ensure a subscription row exists even if the webhook hasn't landed yet.
-    if (!repo.getSubscription(email)) {
-      repo.upsertSubscription({
+    if (!await repo.getSubscription(email)) {
+      await repo.upsertSubscription({
         email,
         plan: (session.metadata?.plan as PlanId) || "pro",
         interval: (session.metadata?.interval as Interval) || "monthly",

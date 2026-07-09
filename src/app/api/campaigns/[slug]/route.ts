@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const campaign = repo.getCampaignBySlug(slug);
+  const campaign = await repo.getCampaignBySlug(slug);
   if (!campaign) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -21,8 +21,8 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const campaign = repo.getCampaignBySlug(slug);
+  const campaign = await repo.getCampaignBySlug(slug);
   if (!campaign) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  repo.archive(campaign.id);
+  await repo.archive(campaign.id);
   return NextResponse.json({ ok: true });
 }

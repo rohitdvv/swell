@@ -160,7 +160,7 @@ export default function Landing() {
               icon={<Store className="size-5" />}
               step="Input C"
               title="Marketplace signal"
-              body="Live consumer demand from the Swell app: saves, past redemptions, and the neighborhood mix within one mile."
+              body="Consumer demand — neighborhood mix, saves and redemptions within one mile. Live once the Swell consumer app is active in your market; a clearly-labeled modeled preview until then."
             />
           </div>
 

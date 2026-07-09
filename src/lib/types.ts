@@ -73,6 +73,7 @@ export type BrandKit = {
 // ---- Input C: Marketplace signals ---------------------------
 export type MarketplaceSignals = {
   in_marketplace: boolean;
+  simulated: boolean; // true = modeled preview, NOT real consumer-app data
   saves: number;
   favorites: number;
   past_redemptions: number;

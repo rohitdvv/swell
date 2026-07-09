@@ -115,7 +115,11 @@ export function CampaignBoard({
               <Sparkles className="size-4" style={{ color: brandColor }} />
               <span className="text-sm font-semibold">How the brain built this</span>
               <Badge tone="ember" className="ml-auto">
-                {campaign.marketplace?.in_marketplace ? "Two-sided read" : "Sales-history read"}
+                {campaign.marketplace?.simulated
+                  ? "Modeled demand"
+                  : campaign.marketplace?.in_marketplace
+                    ? "Two-sided read"
+                    : "Sales-history read"}
               </Badge>
             </div>
             <ul className="divide-y divide-border">
@@ -255,6 +259,9 @@ export function CampaignBoard({
                 <div className="mb-3 flex items-center gap-2">
                   <Store className="size-4" style={{ color: brandColor }} />
                   <span className="text-sm font-semibold">Marketplace signal</span>
+                  {campaign.marketplace.simulated && (
+                    <Badge tone="ember" className="ml-auto">simulated</Badge>
+                  )}
                 </div>
                 <SignalRow
                   label="Organic demand"
@@ -262,8 +269,14 @@ export function CampaignBoard({
                 />
                 {campaign.marketplace.in_marketplace ? (
                   <>
-                    <SignalRow label="In-app saves" value={formatNumber(campaign.marketplace.saves)} />
-                    <SignalRow label="Past redemptions" value={formatNumber(campaign.marketplace.past_redemptions)} />
+                    <SignalRow
+                      label={campaign.marketplace.simulated ? "Est. saves" : "In-app saves"}
+                      value={`${campaign.marketplace.simulated ? "~" : ""}${formatNumber(campaign.marketplace.saves)}`}
+                    />
+                    <SignalRow
+                      label={campaign.marketplace.simulated ? "Est. redemptions" : "Past redemptions"}
+                      value={`${campaign.marketplace.simulated ? "~" : ""}${formatNumber(campaign.marketplace.past_redemptions)}`}
+                    />
                     <SignalRow
                       label="Demand lift"
                       value={`×${campaign.marketplace.lift_factor.toFixed(2)}`}
@@ -273,6 +286,13 @@ export function CampaignBoard({
                       {campaign.marketplace.neighborhood.dominant_age_band} · median basket $
                       {campaign.marketplace.neighborhood.median_basket} · {campaign.marketplace.neighborhood.consumer_density} density (1mi)
                     </div>
+                    {campaign.marketplace.simulated && (
+                      <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
+                        <Info className="size-3.5 shrink-0 mt-0.5" />
+                        Modeled preview from neighborhood + sales. Live figures populate once the Swell
+                        consumer app is active in this market.
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">

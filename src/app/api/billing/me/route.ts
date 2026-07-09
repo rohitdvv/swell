@@ -10,7 +10,7 @@ export async function GET() {
   const account = await getAccount();
   const sub = account.subscription;
   const plan = sub ? PLANS[sub.plan] : null;
-  const usedThisMonth = repo.countCampaignsThisMonth();
+  const usedThisMonth = await repo.countCampaignsThisMonth();
   const limit = plan ? plan.limits.campaignsPerMonth : 0;
 
   return NextResponse.json({

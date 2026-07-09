@@ -13,9 +13,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const day = repo.getDayById(id);
+  const day = await repo.getDayById(id);
   if (!day) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const campaign = repo.getCampaignById(day.campaign_id);
+  const campaign = await repo.getCampaignById(day.campaign_id);
   if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
   const body = await request.json().catch(() => ({}));
@@ -46,7 +46,7 @@ export async function PATCH(
     copy = result.copy;
   }
 
-  const updated = repo.updateDay(id, {
+  const updated = await repo.updateDay(id, {
     daypart: nextDaypart,
     discount_window,
     item: nextItem,
@@ -56,7 +56,7 @@ export async function PATCH(
     copy,
   });
 
-  const refreshed = repo.getCampaignById(day.campaign_id);
+  const refreshed = await repo.getCampaignById(day.campaign_id);
   return NextResponse.json({
     day: updated,
     totals: {

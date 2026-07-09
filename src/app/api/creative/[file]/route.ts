@@ -10,9 +10,9 @@ export async function GET(
 ) {
   const { file } = await params;
   const dayId = file.replace(/\.(png|jpg|jpeg)$/i, "");
-  const day = repo.getDayById(dayId);
+  const day = await repo.getDayById(dayId);
   if (!day) return new Response("Not found", { status: 404 });
-  const campaign = repo.getCampaignById(day.campaign_id);
+  const campaign = await repo.getCampaignById(day.campaign_id);
   if (!campaign) return new Response("Not found", { status: 404 });
 
   // Aspect ratios: default 4:5 poster (cached), plus ad/share formats.

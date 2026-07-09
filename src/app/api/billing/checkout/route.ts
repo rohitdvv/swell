@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   }
   const periodEnd = new Date();
   periodEnd.setDate(periodEnd.getDate() + (interval === "annual" ? 365 : 30));
-  repo.upsertSubscription({
+  await repo.upsertSubscription({
     email,
     plan,
     interval,

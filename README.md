@@ -167,16 +167,22 @@ Copy `.env.example` → `.env.local`. All values are optional — see the file f
 
 ## Deploy (free)
 
-The app is a standard Next.js app and builds clean (`npm run build`).
+Swell runs on **Postgres** — embedded PGlite locally (zero setup), and any Postgres
+(e.g. **Neon**) in production via `DATABASE_URL`. Same SQL both places, **no native DB
+module** to compile, so it deploys cleanly to Vercel serverless.
 
-- **Any always-on host** (Render / Railway / Fly free tier, or a small VPS): works as-is —
-  SQLite persists to `./data/swell.db`. Point `SWELL_DB` at a writable volume.
-- **Vercel**: deploys, but serverless filesystems are ephemeral, so campaigns won't persist
-  across cold starts. For production, swap `src/lib/db.ts` for a free **Neon / Vercel Postgres**
-  (the `repo` interface is small and DB-agnostic by design).
+**Go live on Vercel + Neon (free tiers), ~5 minutes:**
 
-> Note: `better-sqlite3` and `sharp` are native modules. On CI/hosts that gate install
-> scripts, allow them so prebuilt binaries download (the host's “allow build scripts” toggle).
+1. **Create a Neon project** → copy the pooled connection string.
+2. **Import this repo into Vercel** ("New Project" → pick `rohitdvv/got60`).
+3. **Set env vars** in Vercel → Settings → Environment Variables:
+   - `DATABASE_URL` = your Neon string
+   - `NEXT_PUBLIC_BRAIN_PASSWORD`, `SWELL_SESSION_SECRET` (any random string)
+   - `NEXT_PUBLIC_BASE_URL` = your deployed URL (for share/OG images)
+   - *(optional)* `STRIPE_SECRET_KEY` (test key) + `STRIPE_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`/`GROQ_API_KEY`
+4. **Deploy.** Tables auto-create on first request. Done — a live, persistent URL.
+
+Weather/events/geo need no keys; they call free public APIs at request time.
 
 ### Going live (enterprise) — what needs *your* accounts
 The app is built so these plug in without rework; they're gated on credentials/legal setup,
