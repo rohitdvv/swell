@@ -45,8 +45,10 @@ export async function POST(request: Request) {
           },
         ],
         customer_email: email,
-        metadata: { plan, interval },
-        subscription_data: { metadata: { plan, interval } },
+        // Bind the session to the signed-in account so we can verify on return.
+        client_reference_id: email,
+        metadata: { plan, interval, email },
+        subscription_data: { metadata: { plan, interval, email } },
         success_url: `${origin}/account?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/pricing?checkout=cancelled`,
         allow_promotion_codes: true,

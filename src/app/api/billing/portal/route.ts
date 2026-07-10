@@ -15,9 +15,25 @@ export async function POST(request: Request) {
     );
   }
   const origin = new URL(request.url).origin;
-  const session = await stripe.billingPortal.sessions.create({
-    customer: subscription.stripe_customer_id,
-    return_url: `${origin}/account`,
-  });
-  return NextResponse.json({ url: session.url });
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: subscription.stripe_customer_id,
+      return_url: `${origin}/account`,
+    });
+    return NextResponse.json({ url: session.url });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    // Stripe requires the Customer Portal to be configured once per account.
+    if (/portal|configuration/i.test(message)) {
+      return NextResponse.json(
+        {
+          error:
+            "Enable the Stripe Customer Portal once at dashboard.stripe.com → Settings → Billing → Customer portal, then try again.",
+        },
+        { status: 400 }
+      );
+    }
+    console.error("portal error", err);
+    return NextResponse.json({ error: "Could not open billing portal." }, { status: 500 });
+  }
 }
