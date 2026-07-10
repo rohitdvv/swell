@@ -51,9 +51,12 @@ const DAYPART_TONE: Record<Daypart, string> = {
 export function CampaignBoard({
   initial,
   editable = true,
+  showActivate = true,
 }: {
   initial: CampaignWithDays;
   editable?: boolean;
+  /** Hidden on the public demo, where nothing may be mutated. */
+  showActivate?: boolean;
 }) {
   const [campaign] = React.useState(initial);
   const [days, setDays] = React.useState<CampaignDay[]>(initial.days);
@@ -235,30 +238,32 @@ export function CampaignBoard({
             </Card>
 
             {/* activate */}
-            <Card className="p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium">Status</span>
-                <Badge tone={paused ? "muted" : "mint"}>
-                  <span className={cn("size-1.5 rounded-full", paused ? "bg-fg-subtle" : "bg-mint-500 animate-pulse")} />
-                  {paused ? "Paused" : "Live"}
-                </Badge>
-              </div>
-              <Button
-                onClick={activate}
-                loading={activating}
-                variant={paused ? "primary" : "secondary"}
-                className="w-full"
-                size="lg"
-              >
-                {!activating && (paused ? <Zap className="size-4" /> : <Check className="size-4" />)}
-                {paused ? "Activate campaign" : "Campaign is live"}
-              </Button>
-              {editedCount > 0 && (
-                <p className="mt-2.5 text-center text-xs text-fg-subtle">
-                  {editedCount} card{editedCount === 1 ? "" : "s"} hand-tuned
-                </p>
-              )}
-            </Card>
+            {showActivate && (
+              <Card className="p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-sm font-medium">Status</span>
+                  <Badge tone={paused ? "muted" : "mint"}>
+                    <span className={cn("size-1.5 rounded-full", paused ? "bg-fg-subtle" : "bg-mint-500 animate-pulse")} />
+                    {paused ? "Paused" : "Live"}
+                  </Badge>
+                </div>
+                <Button
+                  onClick={activate}
+                  loading={activating}
+                  variant={paused ? "primary" : "secondary"}
+                  className="w-full"
+                  size="lg"
+                >
+                  {!activating && (paused ? <Zap className="size-4" /> : <Check className="size-4" />)}
+                  {paused ? "Activate campaign" : "Campaign is live"}
+                </Button>
+                {editedCount > 0 && (
+                  <p className="mt-2.5 text-center text-xs text-fg-subtle">
+                    {editedCount} card{editedCount === 1 ? "" : "s"} hand-tuned
+                  </p>
+                )}
+              </Card>
+            )}
 
             {/* marketplace signal */}
             {campaign.marketplace && (
