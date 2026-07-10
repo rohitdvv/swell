@@ -65,8 +65,9 @@ export default async function DemoPage() {
                 <div className="text-xs">
                   <div className="font-semibold">{ctx.location_label}</div>
                   <div className="text-fg-subtle">
-                    {ctx.forecast_days}-day live forecast · avg {ctx.avg_temp_f}° ·{" "}
-                    {ctx.rain_days} wet days
+                    {ctx.forecast_days}-day live forecast
+                    {ctx.seasonal_days > 0 && ` + ${ctx.seasonal_days} seasonal`} · avg{" "}
+                    {ctx.avg_temp_f}° · {ctx.rain_days} wet days
                   </div>
                 </div>
               </div>

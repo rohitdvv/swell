@@ -66,7 +66,8 @@ export type StrategyMeta = {
 
 /**
  * Campaigns cover the *next 30 days starting today* — so the near-term days
- * fall inside the live weather-forecast horizon (~16 days out).
+ * fall inside the live weather-forecast horizon (~16 days out). The remaining
+ * days are covered by climate normals, marked as estimates.
  */
 export function defaultStartDate(): string {
   return toISODate(new Date());
@@ -268,18 +269,25 @@ export function buildDayPlan(
     let demandBoost = 1;
     if (ctx.weather) {
       const w = ctx.weather;
+      // A seasonal normal is a weaker signal than a real forecast, so it moves
+      // the discount half as far.
+      const est = w.source === "seasonal";
+      const conf = est ? 0.5 : 1;
+      const tag = est ? " (seasonal est.)" : "";
       if (w.wet) {
-        ctxDelta += 5; // rain suppresses walk-ins → sweeten to pull them out
-        demandBoost *= 0.9;
-        notes.push(`${w.icon} ${w.condition} ${w.tempF}° — deeper offer + comfort pick to beat the rain`);
+        ctxDelta += 5 * conf; // rain suppresses walk-ins → sweeten to pull them out
+        demandBoost *= est ? 0.95 : 0.9;
+        notes.push(
+          `${w.icon} ${w.condition} ${w.tempF}°${tag} — deeper offer + comfort pick to beat the rain`
+        );
       } else if (w.bucket === "cold" || w.bucket === "cool") {
-        ctxDelta += 3;
-        notes.push(`${w.icon} ${w.tempF}° — warming, hearty feature`);
+        ctxDelta += 3 * conf;
+        notes.push(`${w.icon} ${w.tempF}°${tag} — warming, hearty feature`);
       } else if (w.bucket === "hot" || w.bucket === "warm") {
-        demandBoost *= 1.05;
-        notes.push(`${w.icon} ${w.tempF}° — bright, lighter feature for patio weather`);
+        demandBoost *= est ? 1.025 : 1.05;
+        notes.push(`${w.icon} ${w.tempF}°${tag} — bright, lighter feature for patio weather`);
       } else {
-        notes.push(`${w.icon} ${w.condition} ${w.tempF}°`);
+        notes.push(`${w.icon} ${w.condition} ${w.tempF}°${tag}`);
       }
     }
     if (ctx.event) {
@@ -401,8 +409,11 @@ export function assembleCampaign(
   );
   if (context.summary.located) {
     const s = context.summary;
+    const tail = s.seasonal_days
+      ? `, then ${s.seasonal_days} days of seasonal normals (typical weather for those dates, not a forecast)`
+      : "";
     strategy_notes.push(
-      `Reading live conditions for ${s.location_label}: ${s.forecast_days}-day forecast (avg ${s.avg_temp_f}°, ${s.rain_days} wet days) + ${s.event_days} local event day${s.event_days === 1 ? "" : "s"} — offers, items & copy adapt per day.`
+      `Reading live conditions for ${s.location_label}: ${s.forecast_days}-day live forecast${tail} — avg ${s.avg_temp_f}°, ${s.rain_days} wet days — plus ${s.event_days} local event day${s.event_days === 1 ? "" : "s"}. Offers, items & copy adapt per day.`
     );
   }
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { geocode, type GeoLocation } from "./geo";
-import { getForecast } from "./weather";
+import { getForecast, getClimateNormals } from "./weather";
 import { getEvents } from "./events";
 import type { DayWeather, LocalEvent, ContextSummary } from "../types";
 
@@ -24,6 +24,7 @@ export const EMPTY_CONTEXT: CampaignContext = {
     located: false,
     location_label: null,
     forecast_days: 0,
+    seasonal_days: 0,
     rain_days: 0,
     warm_days: 0,
     cold_days: 0,
@@ -31,6 +32,24 @@ export const EMPTY_CONTEXT: CampaignContext = {
     avg_temp_f: null,
   },
 };
+
+/**
+ * Weather for every campaign day. The forecast only reaches ~16 days, so the
+ * tail of a 30-day campaign is filled with climate normals for the same
+ * calendar dates — marked `source: "seasonal"` so nothing is passed off as a
+ * forecast.
+ */
+export async function getWeatherForDates(
+  lat: number,
+  lon: number,
+  dates: string[]
+): Promise<Record<string, DayWeather>> {
+  const forecast = await getForecast(lat, lon);
+  const uncovered = dates.filter((d) => !forecast[d]);
+  if (uncovered.length === 0) return forecast;
+  const normals = await getClimateNormals(lat, lon, uncovered);
+  return { ...normals, ...forecast }; // a real forecast always wins
+}
 
 /**
  * Gather live real-world context (location → weather + local events) for a set
@@ -48,7 +67,7 @@ export async function gatherContext(input: {
   if (!location) return { ...EMPTY_CONTEXT };
 
   const [weather, events] = await Promise.all([
-    getForecast(location.lat, location.lon),
+    getWeatherForDates(location.lat, location.lon, input.dates),
     getEvents(location.country_code, location.lat, location.lon, input.dates),
   ]);
 
@@ -69,7 +88,9 @@ export function buildCampaignContext(
     cold = 0,
     eventDays = 0,
     tempSum = 0,
-    tempCount = 0;
+    tempCount = 0,
+    forecastDays = 0,
+    seasonalDays = 0;
 
   for (const date of dates) {
     const w = weather[date] ?? null;
@@ -78,6 +99,8 @@ export function buildCampaignContext(
     if (w) {
       tempSum += w.tempF;
       tempCount++;
+      if (w.source === "seasonal") seasonalDays++;
+      else forecastDays++;
       if (w.wet) rain++;
       if (w.bucket === "warm" || w.bucket === "hot") warm++;
       if (w.bucket === "cold" || w.bucket === "cool") cold++;
@@ -91,7 +114,8 @@ export function buildCampaignContext(
     summary: {
       located: true,
       location_label: [location.name, location.admin1].filter(Boolean).join(", "),
-      forecast_days: tempCount,
+      forecast_days: forecastDays,
+      seasonal_days: seasonalDays,
       rain_days: rain,
       warm_days: warm,
       cold_days: cold,

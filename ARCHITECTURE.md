@@ -35,7 +35,7 @@ flowchart LR
   end
 
   subgraph External [Live external services]
-    OM["Open-Meteo<br/>geocoding + 16-day forecast"]
+    OM["Open-Meteo<br/>geocoding + 16-day forecast<br/>+ archive (climate normals)"]
     NG["Nager.Date<br/>public holidays"]
     TM["Ticketmaster<br/>concerts/sports (optional)"]
     MDB["TheMealDB<br/>food photography"]
@@ -63,7 +63,7 @@ flowchart TB
   B["Brand Agent<br/>website → logo, palette, type,<br/>voice vector, imagery"]
   D["Demand Agent<br/>marketplace signal<br/>(clearly labeled simulated)"]
   LO["Location Agent<br/>geocode venue"]
-  WE["Weather Agent<br/>live 16-day forecast"]
+  WE["Weather Agent<br/>live forecast + seasonal normals"]
   EV["Events Agent<br/>holidays + ticketed events"]
   AN["Analyst Agent<br/>z-score dayparts,<br/>score items (margin × mix)"]
   ST["Strategy Agent<br/>30 offers: item, window, %,<br/>adapted per day to weather/events"]
@@ -85,7 +85,7 @@ flowchart TB
 | Brand | `brand.ts` | URL → `BrandKit` (logo, colors, fonts, voice vector, image URLs) |
 | Demand | `marketplace.ts` | slug → `MarketplaceSignals` (`simulated: true` until real app data) |
 | Location | `context/geo.ts` | free-text location → lat/lon/country (Open-Meteo geocoding) |
-| Weather | `context/weather.ts` | lat/lon → 16-day `DayWeather` map (WMO codes → buckets) |
+| Weather | `context/weather.ts` | lat/lon → 30-day `DayWeather` map: live 16-day forecast, then climate normals (`source: "seasonal"`) for the tail |
 | Events | `context/events.ts` | country+coords+dates → holidays (Nager.Date) ∪ ticketed events (Ticketmaster, optional key) |
 | Analyst | `generator.ts:analyzeSales` | `ParsedSalesSummary` → daypart z-scores + item scores |
 | Strategy | `generator.ts:buildDayPlan` | all of the above → 30 `RawDay`s (weather/event deltas applied) |
@@ -112,6 +112,11 @@ nothing is invented at render time.
 ## Real-time context loop
 
 - Campaigns start **today**, so the first ~16 days sit inside the live forecast horizon.
+- The remaining ~14 days are filled with **climate normals** — the average of that exact
+  calendar date over the last 5 years, from Open-Meteo's free archive API. They carry
+  `source: "seasonal"`, are labelled "est." in the UI, move the discount **half** as far
+  as a real forecast, and are **withheld from the copywriter** so no caption can ever
+  claim "Rainy Saturday?" off an estimate.
 - All context calls are **resilient**: timeout-guarded, cached per process, and degrade
   to a sales-history-only plan (no key, no location, API hiccup → still generates).
 - Regenerating a campaign re-pulls weather/events; a scheduled daily regenerate (Vercel

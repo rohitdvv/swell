@@ -80,7 +80,7 @@ Events ──────────────┘
 | **Brand Agent** | Reads the website → logo, palette, typography, voice vector, imagery |
 | **Demand Agent** | Reads live marketplace demand (saves, redemptions, neighborhood mix) |
 | **Location Agent** | Geocodes the venue to coordinates (Open-Meteo geocoding) |
-| **Weather Agent** | Pulls the **live 16-day forecast** (Open-Meteo) — real-time, no key |
+| **Weather Agent** | Pulls the **live 16-day forecast**, then **climate normals** for days 17–30 (Open-Meteo) — real-time, no key |
 | **Events Agent** | Finds holidays + nearby ticketed events that move demand (Nager.Date; optional Ticketmaster) |
 | **Analyst Agent** | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
 | **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30, **adapted to each day's weather & events** |
@@ -92,14 +92,17 @@ Events ──────────────┘
 Give Swell a **location** and three agents pull live real-world signal that reshapes the plan
 day-by-day — visible in the artifact's **Live conditions** card and the agent trace:
 
-- **Weather** (Open-Meteo, 16-day forecast): a **rainy/cool** day pushes a *comfort* dish at a
+- **Weather** (Open-Meteo, 16-day forecast + seasonal normals beyond it): a **rainy/cool** day pushes a *comfort* dish at a
   deeper discount; a **warm/sunny** day features *lighter/patio* fare at a protected margin.
 - **Events** (Nager.Date public holidays; Ticketmaster concerts/sports with an optional key):
   a holiday or nearby event **protects margin** and leads with a hero item to ride the crowd.
 - Each day also carries an **inventory/prep hint** (expected covers) derived from the forecast.
 
-Everything degrades gracefully — no location, an API hiccup, or dates beyond the forecast
-horizon simply fall back to the sales-history plan.
+Days beyond the 16-day forecast horizon use **seasonal climate normals** (the average of
+that calendar date over the past 5 years). They are marked `est.` everywhere they appear,
+nudge the discount half as hard as a real forecast, and are hidden from the copywriter so
+no caption ever asserts weather we can't actually know. Everything else degrades gracefully
+— no location or an API hiccup simply falls back to the sales-history plan.
 
 ### Distribution — a publish-ready ad kit
 The **Distribution** tab turns the campaign into channel-ready ads: every poster is exported

@@ -113,7 +113,8 @@ function eventHooks(i: CopyInput): string[] {
 /** Weather hook when there is no event but the day is notable. */
 function weatherHooks(i: CopyInput): string[] {
   const w = i.weather;
-  if (!w) return [];
+  // A seasonal average is not a forecast — never write "Rainy Saturday?" off one.
+  if (!w || w.source !== "forecast") return [];
   if (w.wet) return [`Rainy ${i.dow}? ${i.item}, ${i.pctOff}% off ${winShort(i.window)}.`];
   if (w.bucket === "cold" || w.bucket === "cool")
     return [`${w.tempF}° out — warm up with ${i.item}, ${i.pctOff}% off.`];
@@ -180,9 +181,12 @@ async function llmBatch(inputs: CopyInput[]): Promise<string[] | null> {
           venue: i.event.venue ?? undefined,
         }
       : undefined,
-    weather: i.weather
-      ? { condition: i.weather.condition, temp_f: i.weather.tempF, wet: i.weather.wet }
-      : undefined,
+    // Seasonal normals are withheld from the writer: they are an estimate for
+    // that calendar date, not a forecast, so no caption may claim them.
+    weather:
+      i.weather?.source === "forecast"
+        ? { condition: i.weather.condition, temp_f: i.weather.tempF, wet: i.weather.wet }
+        : undefined,
   }));
   const prompt = `Generate one line of copy (<80 chars) for each of these ${inputs.length} promos. Return ONLY a JSON array of strings in order.\n${JSON.stringify(userPayload)}`;
 

@@ -56,6 +56,8 @@ function eventScore(e: TmEvent, type: LocalEvent["type"]): number {
   return score;
 }
 
+const MAX_PAGES = 5; // Ticketmaster caps size*page at 1000
+
 async function getTicketedEvents(
   lat: number,
   lon: number,
@@ -64,20 +66,38 @@ async function getTicketedEvents(
 ): Promise<Record<string, LocalEvent>> {
   const key = process.env.TICKETMASTER_API_KEY;
   if (!key) return {};
-  try {
+
+  const fetchPage = async (page: number) => {
     const url =
       `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}` +
-      `&latlong=${lat},${lon}&radius=10&unit=miles&size=200&sort=date,asc` +
+      `&latlong=${lat},${lon}&radius=10&unit=miles&size=200&page=${page}&sort=date,asc` +
       // Only demand-moving categories — otherwise recurring exhibitions
       // fill the whole page and crowd out real games and concerts.
       `&classificationName=music,sports` +
       `&startDateTime=${start}T00:00:00Z&endDateTime=${end}T23:59:59Z`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error("bad");
-    const j = (await res.json()) as { _embedded?: { events?: TmEvent[] } };
+    if (!res.ok) throw new Error(`ticketmaster ${res.status}`);
+    return (await res.json()) as {
+      _embedded?: { events?: TmEvent[] };
+      page?: { totalPages?: number };
+    };
+  };
+
+  try {
+    // One page is not enough: a busy city returns hundreds of events and the
+    // first page alone covered barely half the month.
+    const first = await fetchPage(0);
+    const events: TmEvent[] = [...(first._embedded?.events ?? [])];
+    const totalPages = Math.min(first.page?.totalPages ?? 1, MAX_PAGES);
+    if (totalPages > 1) {
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) => fetchPage(i + 1).catch(() => null))
+      );
+      for (const r of rest) if (r?._embedded?.events) events.push(...r._embedded.events);
+    }
 
     const best: Record<string, { event: LocalEvent; score: number }> = {};
-    for (const e of j._embedded?.events ?? []) {
+    for (const e of events) {
       const date = e.dates?.start?.localDate;
       if (!date) continue;
       // The API occasionally returns dates outside the window — re-check.

@@ -20,9 +20,13 @@ import { synthesizeMarketplaceSignals, neutralSignals } from "./marketplace";
 import { repo } from "./db";
 import { slugify, addDays } from "./utils";
 import { geocode } from "./context/geo";
-import { getForecast } from "./context/weather";
 import { getEvents } from "./context/events";
-import { buildCampaignContext, EMPTY_CONTEXT, type CampaignContext } from "./context";
+import {
+  buildCampaignContext,
+  getWeatherForDates,
+  EMPTY_CONTEXT,
+  type CampaignContext,
+} from "./context";
 import { CAMPAIGN_LEN } from "./generator";
 
 export type OrchestrationInput = {
@@ -124,13 +128,17 @@ export async function orchestrate(
     const [weather, events] = await Promise.all([
       track(
         "Weather Agent",
-        "Pulls the live daily forecast (Open-Meteo)",
-        () => getForecast(location.lat, location.lon),
+        "Pulls the live forecast, then climate normals for the days beyond it",
+        () => getWeatherForDates(location.lat, location.lon, dates),
         (w) => {
-          const days = Object.keys(w).length;
-          const wet = Object.values(w).filter((d) => d.wet).length;
-          const avg = days ? Math.round(Object.values(w).reduce((s, d) => s + d.tempF, 0) / days) : 0;
-          return `${days}-day forecast · avg ${avg}° · ${wet} wet day${wet === 1 ? "" : "s"}`;
+          const all = Object.values(w);
+          if (all.length === 0) return "no weather available";
+          const live = all.filter((d) => d.source === "forecast").length;
+          const seasonal = all.length - live;
+          const wet = all.filter((d) => d.wet).length;
+          const avg = Math.round(all.reduce((s, d) => s + d.tempF, 0) / all.length);
+          const tail = seasonal ? ` + ${seasonal} days seasonal normals` : "";
+          return `${live}-day live forecast${tail} · avg ${avg}° · ${wet} wet day${wet === 1 ? "" : "s"}`;
         }
       ),
       track(

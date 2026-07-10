@@ -127,7 +127,16 @@ export function CampaignReport({ campaign }: { campaign: CampaignWithDays }) {
             {campaign.context?.located && (
               <>
                 <ReadRow label="Location" value={campaign.context.location_label || "—"} />
-                <ReadRow label="Forecast window" value={`${campaign.context.forecast_days} days · avg ${campaign.context.avg_temp_f}°`} />
+                <ReadRow
+                  label="Live forecast"
+                  value={`${campaign.context.forecast_days} days · avg ${campaign.context.avg_temp_f}°`}
+                />
+                {campaign.context.seasonal_days > 0 && (
+                  <ReadRow
+                    label="Seasonal normals"
+                    value={`${campaign.context.seasonal_days} days (est.)`}
+                  />
+                )}
                 <ReadRow label="Event days" value={`${campaign.context.event_days}`} />
               </>
             )}

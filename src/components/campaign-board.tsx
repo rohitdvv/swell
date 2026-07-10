@@ -22,7 +22,14 @@ import {
   Copy,
   Plug,
 } from "lucide-react";
-import type { CampaignWithDays, CampaignDay, Daypart, AgentEvent, ContextSummary } from "@/lib/types";
+import type {
+  CampaignWithDays,
+  CampaignDay,
+  Daypart,
+  AgentEvent,
+  ContextSummary,
+  DayWeather,
+} from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
 import {
   formatCompactCurrency,
@@ -39,6 +46,14 @@ import { CampaignReport } from "@/components/campaign-report";
 import { AssistantWidget } from "@/components/assistant-widget";
 
 const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Never let a seasonal estimate read as if we know the weather that day. */
+function weatherTitle(w: DayWeather): string {
+  const base = `${w.condition} ${w.tempF}° / ${w.lowF}°`;
+  return w.source === "seasonal"
+    ? `${base} — seasonal average for this date (beyond the 16-day forecast), ${w.rainProb}% of recent years were wet`
+    : `${base} — live forecast, ${w.rainProb}% chance of rain`;
+}
 
 const DAYPART_TONE: Record<Daypart, string> = {
   Breakfast: "#f59e0b",
@@ -387,7 +402,10 @@ function DayCell({
         <span className="flex items-center gap-1 text-xs font-semibold text-fg-subtle">
           {parseLocalDate(day.date).getDate()}
           {day.weather && (
-            <span className="font-normal" title={`${day.weather.condition} ${day.weather.tempF}°`}>
+            <span
+              className={day.weather.source === "seasonal" ? "font-normal opacity-60" : "font-normal"}
+              title={weatherTitle(day.weather)}
+            >
               {day.weather.icon}
             </span>
           )}
@@ -462,8 +480,11 @@ function DayListItem({
           <Clock className="size-3" />
           {day.daypart} · {day.discount_window}
           {day.weather && (
-            <span className="ml-1">
+            <span className="ml-1" title={weatherTitle(day.weather)}>
               {day.weather.icon} {day.weather.tempF}°
+              {day.weather.source === "seasonal" && (
+                <span className="text-fg-subtle/70"> avg</span>
+              )}
             </span>
           )}
           {day.event && (
@@ -569,8 +590,14 @@ function EditModal({
           <span>·</span>
           <span>{DAYPART_WINDOWS[daypart]}</span>
           {day.weather && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">
+            <span
+              className="rounded-full bg-surface-2 px-2 py-0.5 text-xs"
+              title={weatherTitle(day.weather)}
+            >
               {day.weather.icon} {day.weather.tempF}° {day.weather.condition}
+              {day.weather.source === "seasonal" && (
+                <span className="text-fg-subtle"> · est.</span>
+              )}
             </span>
           )}
           {day.event && (
@@ -903,7 +930,10 @@ function RealtimeContext({
   brandColor: string;
 }) {
   const rows = [
-    { label: "Forecast window", value: `${context.forecast_days} days · avg ${context.avg_temp_f}°` },
+    { label: "Live forecast", value: `${context.forecast_days} days · avg ${context.avg_temp_f}°` },
+    ...(context.seasonal_days > 0
+      ? [{ label: "Seasonal normals", value: `${context.seasonal_days} days (est.)` }]
+      : []),
     { label: "Wet days", value: `${context.rain_days}` },
     { label: "Warm days", value: `${context.warm_days}` },
     { label: "Local event days", value: `${context.event_days}` },
@@ -929,6 +959,13 @@ function RealtimeContext({
       ))}
       <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
         Items, discounts &amp; copy adapt to each day&apos;s weather and nearby events.
+        {context.seasonal_days > 0 && (
+          <>
+            {" "}
+            Forecasts run out at 16 days, so later dates use the average weather for that calendar
+            date over the past 5 years — an estimate, marked &ldquo;est.&rdquo;
+          </>
+        )}
       </p>
     </Card>
   );

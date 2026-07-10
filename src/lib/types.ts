@@ -118,6 +118,13 @@ export type DayWeather = {
   rainProb: number;
   bucket: "cold" | "cool" | "mild" | "warm" | "hot";
   wet: boolean;
+  /**
+   * "forecast" = the live 16-day forecast.
+   * "seasonal" = a climate normal (average of this calendar date over the
+   * last 5 years) for days beyond the forecast horizon. Never presented as
+   * a forecast.
+   */
+  source: "forecast" | "seasonal";
 };
 
 export type LocalEvent = {
@@ -130,7 +137,8 @@ export type LocalEvent = {
 export type ContextSummary = {
   located: boolean;
   location_label: string | null;
-  forecast_days: number;
+  forecast_days: number; // days covered by the live forecast
+  seasonal_days: number; // days covered by climate normals instead
   rain_days: number;
   warm_days: number;
   cold_days: number;

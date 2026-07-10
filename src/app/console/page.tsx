@@ -495,7 +495,7 @@ const GEN_STEPS = [
   { icon: Globe, label: "Brand Agent", sub: "logo, palette, fonts, voice & imagery" },
   { icon: Store, label: "Demand Agent", sub: "saves, redemptions, neighborhood mix" },
   { icon: MapPin, label: "Location Agent", sub: "geocoding your venue" },
-  { icon: CloudSun, label: "Weather Agent", sub: "live 16-day forecast" },
+  { icon: CloudSun, label: "Weather Agent", sub: "live forecast + seasonal normals" },
   { icon: CalendarDays, label: "Events Agent", sub: "holidays & nearby events" },
   { icon: FileSpreadsheet, label: "Analyst Agent", sub: "z-scoring dayparts vs your baseline" },
   { icon: Sparkles, label: "Strategy Agent", sub: "30 offers, adapted to weather & events" },

@@ -84,8 +84,12 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
   if (c.context?.located) {
     facts.push({
       id: "weather",
-      text: `Live conditions for ${c.context.location_label}: ${c.context.forecast_days}-day forecast, average ${c.context.avg_temp_f}°F, ${c.context.rain_days} wet day(s), ${c.context.event_days} local event day(s). Rainy/cold days get comfort dishes at deeper discounts; warm days get lighter items at protected margins. Events shift the plan toward hero items with smaller discounts (demand is already coming).`,
-      tags: ["weather", "rain", "forecast", "temperature", "events", "local", "conditions", "cold", "hot", "adapt"],
+      text: `Live conditions for ${c.context.location_label}: a ${c.context.forecast_days}-day live forecast${
+        c.context.seasonal_days
+          ? `, plus ${c.context.seasonal_days} later day(s) covered by seasonal climate normals (the average weather for that calendar date over the past 5 years — an estimate, not a forecast, because forecasts only reach about 16 days out)`
+          : ""
+      }. Average ${c.context.avg_temp_f}°F, ${c.context.rain_days} wet day(s), ${c.context.event_days} local event day(s). Rainy/cold days get comfort dishes at deeper discounts; warm days get lighter items at protected margins. Events shift the plan toward hero items with smaller discounts (demand is already coming).`,
+      tags: ["weather", "rain", "forecast", "temperature", "events", "local", "conditions", "cold", "hot", "adapt", "seasonal", "normal", "estimate"],
     });
   }
 
