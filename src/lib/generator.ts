@@ -359,6 +359,9 @@ export async function writeCopy(
     voiceSummary: brand.voice_summary,
     voiceKeywords: brand.voice_keywords,
     seed: `${campaignId}:${d.day_index}`,
+    // Let the copywriter hook the real world, not just the discount.
+    event: d.event,
+    weather: d.weather,
   }));
   return generateCopyBatch(copyInputs);
 }

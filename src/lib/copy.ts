@@ -1,6 +1,6 @@
 import "server-only";
 import { seededUnit } from "./utils";
-import type { Daypart } from "./types";
+import type { Daypart, DayWeather, LocalEvent } from "./types";
 
 export type CopyInput = {
   restaurantName: string;
@@ -12,6 +12,9 @@ export type CopyInput = {
   voiceSummary: string;
   voiceKeywords: string[];
   seed: string;
+  /** Real-world context, so the line can hook the day — not just the discount. */
+  event?: LocalEvent | null;
+  weather?: DayWeather | null;
 };
 
 // ---- Guardrail (free, deterministic) -----------------------
@@ -84,7 +87,48 @@ function winShort(window: string): string {
   return window;
 }
 
+/** Short, human name for the thing happening nearby. */
+function eventHooks(i: CopyInput): string[] {
+  const e = i.event;
+  if (!e) return [];
+  const short = e.name.length > 26 ? e.name.slice(0, 25).trimEnd() + "…" : e.name;
+  const hooks: string[] = [];
+  if (e.type === "sports") {
+    hooks.push(`Game day? ${i.pctOff}% off ${i.item}, ${winShort(i.window)}.`);
+    if (e.venue) hooks.push(`Heading to ${e.venue}? ${i.pctOff}% off ${i.item} first.`);
+    hooks.push(`Pre-game ${i.item} — ${i.pctOff}% off, ${winShort(i.window)}.`);
+  } else if (e.type === "concert") {
+    hooks.push(`Show tonight? ${i.pctOff}% off ${i.item} before doors.`);
+    if (e.venue) hooks.push(`Before ${e.venue}: ${i.item}, ${i.pctOff}% off.`);
+    hooks.push(`${short} nearby — ${i.pctOff}% off ${i.item}.`);
+  } else if (e.type === "holiday") {
+    hooks.push(`${short}: ${i.pctOff}% off ${i.item}, ${winShort(i.window)}.`);
+    hooks.push(`Celebrate ${short} — ${i.item}, ${i.pctOff}% off.`);
+  } else {
+    hooks.push(`${short} nearby — ${i.pctOff}% off ${i.item}.`);
+  }
+  return hooks;
+}
+
+/** Weather hook when there is no event but the day is notable. */
+function weatherHooks(i: CopyInput): string[] {
+  const w = i.weather;
+  if (!w) return [];
+  if (w.wet) return [`Rainy ${i.dow}? ${i.item}, ${i.pctOff}% off ${winShort(i.window)}.`];
+  if (w.bucket === "cold" || w.bucket === "cool")
+    return [`${w.tempF}° out — warm up with ${i.item}, ${i.pctOff}% off.`];
+  if (w.bucket === "hot" || w.bucket === "warm")
+    return [`${w.tempF}° and sunny — ${i.item}, ${i.pctOff}% off.`];
+  return [];
+}
+
 function templateCopy(i: CopyInput): string {
+  // Real-world hooks first: an event beats the weather, weather beats a plain offer.
+  for (const candidate of [...eventHooks(i), ...weatherHooks(i)]) {
+    const out = candidate.replace(/\s+/g, " ").trim();
+    if (runGuardrail(out).ok) return out;
+  }
+
   const bank = BANKS[i.voiceSummary] ?? BANKS["warm & inviting"];
   const order = bank
     .map((tpl, idx) => ({ tpl, r: seededUnit(i.seed + ":c" + idx) }))
@@ -99,7 +143,22 @@ function templateCopy(i: CopyInput): string {
 }
 
 // ---- Optional LLM providers --------------------------------
-const SYSTEM_PROMPT = `You are generating restaurant marketing copy for a 30-day promotional campaign. Inputs: restaurant brand voice, target item, target time window, discount percent. Output: a single line of marketing copy under 80 characters, matching the restaurant's voice, never claiming superiority, never using prohibited words (best, #1, guaranteed, cure, healthiest). Reject if you cannot produce on-brand copy.`;
+const SYSTEM_PROMPT = `You are generating restaurant marketing copy for a 30-day promotional campaign.
+
+Each promo may include real context for that specific day:
+- "event": a concert, game or holiday happening near the restaurant that day.
+- "weather": the live forecast for that day.
+
+Rules:
+- Output ONE line of marketing copy, strictly under 80 characters.
+- If an event is present, LEAD WITH THE EVENT as the hook, then the offer.
+  e.g. "Game day at Wintrust? 25% off Margherita, 5-9pm."
+- If no event but the weather is notable (rain, cold, heat), hook the weather instead.
+  e.g. "Rainy Tuesday? Cacio e Pepe, 30% off."
+- Otherwise hook the time window or the dish itself.
+- Match the restaurant's voice. Never claim superiority. Never use: best, #1,
+  guaranteed, cure, healthiest, perfect, finest, ultimate.
+- Do not invent facts. Only use the event/weather/offer you are given.`;
 
 async function llmBatch(inputs: CopyInput[]): Promise<string[] | null> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -114,6 +173,16 @@ async function llmBatch(inputs: CopyInput[]): Promise<string[] | null> {
     window: `${i.dow} ${i.window}`,
     pct_off: i.pctOff,
     restaurant: i.restaurantName,
+    event: i.event
+      ? {
+          name: i.event.name,
+          type: i.event.type,
+          venue: i.event.venue ?? undefined,
+        }
+      : undefined,
+    weather: i.weather
+      ? { condition: i.weather.condition, temp_f: i.weather.tempF, wet: i.weather.wet }
+      : undefined,
   }));
   const prompt = `Generate one line of copy (<80 chars) for each of these ${inputs.length} promos. Return ONLY a JSON array of strings in order.\n${JSON.stringify(userPayload)}`;
 
@@ -171,19 +240,51 @@ function parseLines(text: string, n: number): string[] | null {
 // ---- Public API --------------------------------------------
 export type CopyResult = { copy: string; source: "llm" | "template"; guardrail: string };
 
+/**
+ * When a real event is happening that day, the line MUST hook it. Models
+ * sometimes ignore that instruction and hook the weather instead, so we
+ * verify rather than trust: does the copy reference the event at all?
+ */
+function mentionsEvent(copy: string, event: LocalEvent): boolean {
+  const c = copy.toLowerCase();
+  if (event.venue && c.includes(event.venue.toLowerCase().split(" ")[0])) return true;
+  // Any distinctive word from the event name (skip filler like "vs", "the").
+  const words = event.name
+    .toLowerCase()
+    .split(/[^a-z0-9']+/)
+    .filter((w) => w.length >= 4 && !["with", "presents", "tour", "live"].includes(w));
+  if (words.some((w) => c.includes(w))) return true;
+  const kind: Record<LocalEvent["type"], RegExp> = {
+    sports: /\b(game|match|tip-?off|kickoff|first pitch|pre-?game)\b/,
+    concert: /\b(show|gig|concert|doors|set|encore)\b/,
+    holiday: /\b(holiday|celebrate|weekend)\b/,
+    festival: /\b(festival|fest)\b/,
+    event: /\b(event|nearby|tonight)\b/,
+  };
+  return kind[event.type].test(c);
+}
+
 export async function generateCopyBatch(inputs: CopyInput[]): Promise<CopyResult[]> {
   const llm = await llmBatch(inputs);
   return inputs.map((input, idx) => {
     if (llm && llm[idx]) {
       const candidate = llm[idx].trim().replace(/^["']|["']$/g, "");
       const check = runGuardrail(candidate);
-      if (check.ok) return { copy: candidate, source: "llm", guardrail: "passed" };
-      // guardrail rejected LLM output → deterministic fallback
-      return {
-        copy: templateCopy(input),
-        source: "template",
-        guardrail: `llm rejected (${check.reason}); regenerated`,
-      };
+      if (!check.ok) {
+        return {
+          copy: templateCopy(input),
+          source: "template",
+          guardrail: `llm rejected (${check.reason}); regenerated`,
+        };
+      }
+      if (input.event && !mentionsEvent(candidate, input.event)) {
+        return {
+          copy: templateCopy(input), // event hook is first in templateCopy
+          source: "template",
+          guardrail: "llm ignored the local event; rewrote with the event hook",
+        };
+      }
+      return { copy: candidate, source: "llm", guardrail: "passed" };
     }
     return { copy: templateCopy(input), source: "template", guardrail: "passed" };
   });

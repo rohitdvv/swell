@@ -124,6 +124,7 @@ export type LocalEvent = {
   name: string;
   type: "holiday" | "concert" | "sports" | "festival" | "event";
   demand: "up" | "neutral";
+  venue?: string | null; // e.g. "Wintrust Arena" — used to write the hook
 };
 
 export type ContextSummary = {

@@ -36,6 +36,26 @@ async function getHolidays(countryCode: string, year: number): Promise<Record<st
  * Ticketmaster Discovery API — only if TICKETMASTER_API_KEY is set. Returns
  * a map date → the biggest event that day. Degrades silently without a key.
  */
+type TmEvent = {
+  name: string;
+  dates?: { start?: { localDate?: string } };
+  classifications?: Array<{ segment?: { name?: string } }>;
+  _embedded?: {
+    venues?: Array<{ name?: string }>;
+    attractions?: Array<{ name?: string }>;
+  };
+};
+
+/** Bigger crowds move more covers. Rank so the best event wins the day. */
+function eventScore(e: TmEvent, type: LocalEvent["type"]): number {
+  let score = type === "sports" ? 3 : type === "concert" ? 2 : 1;
+  // A named performer/team means a real draw, not a standing exhibition.
+  if (e._embedded?.attractions?.length) score += 2;
+  // Recurring tours/exhibitions are weak demand signals.
+  if (/\b(tour|museum|exhibit|experience)\b/i.test(e.name)) score -= 2;
+  return score;
+}
+
 async function getTicketedEvents(
   lat: number,
   lon: number,
@@ -47,26 +67,43 @@ async function getTicketedEvents(
   try {
     const url =
       `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}` +
-      `&latlong=${lat},${lon}&radius=10&unit=miles&size=100&sort=date,asc` +
+      `&latlong=${lat},${lon}&radius=10&unit=miles&size=200&sort=date,asc` +
+      // Only demand-moving categories — otherwise recurring exhibitions
+      // fill the whole page and crowd out real games and concerts.
+      `&classificationName=music,sports` +
       `&startDateTime=${start}T00:00:00Z&endDateTime=${end}T23:59:59Z`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error("bad");
-    const j = (await res.json()) as {
-      _embedded?: { events?: Array<{ name: string; dates?: { start?: { localDate?: string } }; classifications?: Array<{ segment?: { name?: string } }> }> };
-    };
-    const out: Record<string, LocalEvent> = {};
+    const j = (await res.json()) as { _embedded?: { events?: TmEvent[] } };
+
+    const best: Record<string, { event: LocalEvent; score: number }> = {};
     for (const e of j._embedded?.events ?? []) {
       const date = e.dates?.start?.localDate;
       if (!date) continue;
+      // The API occasionally returns dates outside the window — re-check.
+      if (date < start || date > end) continue;
+
       const seg = e.classifications?.[0]?.segment?.name?.toLowerCase() || "";
       const type: LocalEvent["type"] = seg.includes("sport")
         ? "sports"
         : seg.includes("music")
           ? "concert"
           : "event";
-      // keep the first (earliest / already sorted) per date
-      if (!out[date]) out[date] = { name: e.name, type, demand: "up" };
+      const score = eventScore(e, type);
+      if (best[date] && best[date].score >= score) continue;
+      best[date] = {
+        score,
+        event: {
+          name: e.name,
+          type,
+          demand: "up",
+          venue: e._embedded?.venues?.[0]?.name ?? null,
+        },
+      };
     }
+
+    const out: Record<string, LocalEvent> = {};
+    for (const [date, v] of Object.entries(best)) out[date] = v.event;
     return out;
   } catch {
     return {};
