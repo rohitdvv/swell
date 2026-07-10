@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/billing/stripe";
-import { setAccountCookie } from "@/lib/billing/account";
 import { repo } from "@/lib/db";
 import type { PlanId, Interval } from "@/lib/billing/plans";
 
@@ -32,7 +31,6 @@ export async function POST(request: Request) {
           typeof session.subscription === "string" ? session.subscription : null,
       });
     }
-    await setAccountCookie(email);
     return NextResponse.json({ ok: true, email });
   } catch (err) {
     console.error("bind error", err);

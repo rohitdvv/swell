@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/billing/stripe";
 import { PLANS, type PlanId, type Interval } from "@/lib/billing/plans";
 import { repo } from "@/lib/db";
-import { getAccountEmail, setAccountCookie } from "@/lib/billing/account";
+import { getAccountEmail } from "@/lib/billing/account";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,6 +71,5 @@ export async function POST(request: Request) {
     stripe_customer_id: null,
     stripe_subscription_id: null,
   });
-  await setAccountCookie(email);
   return NextResponse.json({ url: "/console", mode: "demo" });
 }

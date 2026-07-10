@@ -28,12 +28,14 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Badge, Card, Field, Input, Segmented } from "@/components/ui";
 import { CampaignBoard } from "@/components/campaign-board";
 import { toast } from "@/components/toaster";
+import { UserButton } from "@clerk/nextjs";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
-type Gate = "loading" | "unauthed" | "unsubscribed" | "ok";
+type Gate = "loading" | "unsubscribed" | "ok";
 
 export default function ConsolePage() {
+  // Clerk middleware guarantees a signed-in user here; we only gate on plan.
   const [gate, setGate] = React.useState<Gate>("loading");
   const [userName, setUserName] = React.useState<string>("");
 
@@ -41,21 +43,16 @@ export default function ConsolePage() {
     fetch("/api/billing/me")
       .then((r) => r.json())
       .then((me) => {
-        if (!me?.user) {
-          setGate("unauthed");
-          window.location.replace("/auth?next=/console");
-          return;
-        }
-        setUserName(me.user.name);
-        setGate(me.subscription && me.subscription.status === "active" ? "ok" : "unsubscribed");
+        setUserName(me?.user?.name ?? "");
+        setGate(me?.subscription && me.subscription.status === "active" ? "ok" : "unsubscribed");
       })
-      .catch(() => setGate("unauthed"));
+      .catch(() => setGate("unsubscribed"));
   }, []);
 
-  if (gate === "loading" || gate === "unauthed") {
+  if (gate === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center gap-2 text-fg-muted">
-        <Loader2 className="size-4 animate-spin" /> {gate === "loading" ? "Checking your session…" : "Redirecting to sign in…"}
+        <Loader2 className="size-4 animate-spin" /> Checking your plan…
       </div>
     );
   }
@@ -70,22 +67,14 @@ export default function ConsolePage() {
             </div>
             <Logo href={null} />
             <p className="mt-3 text-sm text-fg-muted">
-              Hi {userName.split(" ")[0]} — one more step: pick a plan to unlock the Console.
+              {userName ? `Hi ${userName.split(" ")[0]} — one` : "One"} more step: pick a plan to
+              unlock the Console.
             </p>
             <Link href="/pricing">
               <Button className="mt-5 w-full" size="lg">
                 Choose a plan <ArrowRight className="size-4" />
               </Button>
             </Link>
-            <button
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.assign("/auth");
-              }}
-              className="mt-3 text-xs text-fg-subtle hover:text-fg"
-            >
-              Sign out
-            </button>
           </Card>
         </motion.div>
       </div>
@@ -225,6 +214,7 @@ function Console() {
               Account
             </Link>
             <ThemeToggle />
+            <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
           </div>
         </div>
       </header>

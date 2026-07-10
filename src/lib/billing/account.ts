@@ -1,54 +1,40 @@
 import "server-only";
-import { cookies } from "next/headers";
-import crypto from "node:crypto";
+import { currentUser } from "@clerk/nextjs/server";
 import { repo } from "@/lib/db";
-import type { Subscription } from "@/lib/types";
+import type { Subscription, User } from "@/lib/types";
 
-const COOKIE = "swell_acct";
-
-function secret(): string {
-  return process.env.SWELL_SESSION_SECRET || "swell-dev-session-secret";
-}
-
-function sign(email: string): string {
-  const sig = crypto.createHmac("sha256", secret()).update(email).digest("base64url");
-  return `${Buffer.from(email).toString("base64url")}.${sig}`;
-}
-
-function verify(token: string): string | null {
-  const [b64, sig] = token.split(".");
-  if (!b64 || !sig) return null;
-  const email = Buffer.from(b64, "base64url").toString("utf-8");
-  const expected = crypto.createHmac("sha256", secret()).update(email).digest("base64url");
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? email : null;
-}
-
+/**
+ * Identity comes from Clerk. On first sight of a signed-in user we mirror
+ * them into our own `users` table (keyed by email) so campaigns and
+ * subscriptions keep working exactly as before.
+ */
 export async function getAccountEmail(): Promise<string | null> {
-  const token = (await cookies()).get(COOKIE)?.value;
-  return token ? verify(token) : null;
-}
-
-export async function setAccountCookie(email: string): Promise<void> {
-  (await cookies()).set(COOKIE, sign(email.toLowerCase()), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
-}
-
-export async function clearAccountCookie(): Promise<void> {
-  (await cookies()).delete(COOKIE);
+  const user = await currentUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  return email ? email.toLowerCase() : null;
 }
 
 export type Account = {
   email: string | null;
+  user: User | null;
   subscription: Subscription | null;
 };
 
 export async function getAccount(): Promise<Account> {
-  const email = await getAccountEmail();
-  if (!email) return { email: null, subscription: null };
-  return { email, subscription: await repo.getSubscription(email) };
+  const clerkUser = await currentUser();
+  const email = clerkUser?.primaryEmailAddress?.emailAddress?.toLowerCase();
+  if (!clerkUser || !email) return { email: null, user: null, subscription: null };
+
+  let user = await repo.getUser(email);
+  if (!user) {
+    const name =
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
+      clerkUser.username ||
+      email.split("@")[0];
+    // Password is managed by Clerk; store a placeholder so the column stays NOT NULL.
+    await repo.createUser({ email, name, restaurant_name: null, password_hash: "clerk" });
+    user = await repo.getUser(email);
+  }
+
+  return { email, user, subscription: await repo.getSubscription(email) };
 }

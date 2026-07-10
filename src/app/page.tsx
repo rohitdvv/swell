@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Logo, Flame } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthNav } from "@/components/auth-nav";
 
 export default function Landing() {
   return (
@@ -44,16 +45,8 @@ export default function Landing() {
             <Link href="/pricing" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
               Pricing
             </Link>
-            <Link href="/auth" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
-              Sign in
-            </Link>
             <ThemeToggle />
-            <Link
-              href="/auth"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ember-gradient px-3.5 text-sm font-medium text-white shadow-ember transition hover:brightness-105"
-            >
-              Get started <ArrowRight className="size-3.5" />
-            </Link>
+            <AuthNav />
           </nav>
         </div>
       </header>
@@ -76,7 +69,7 @@ export default function Landing() {
             </p>
             <div className="animate-fade-up delay-3 mt-8 flex flex-wrap items-center gap-3">
               <Link
-                href="/auth"
+                href="/sign-up"
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-ember-gradient px-6 text-[15px] font-medium text-white shadow-ember transition hover:brightness-105"
               >
                 <Sparkles className="size-4" /> Get started free
@@ -236,7 +229,7 @@ export default function Landing() {
               Their CSV in, their 30-day branded campaign out — as a URL you can text to any operator.
             </p>
             <Link
-              href="/auth"
+              href="/sign-up"
               className="mt-8 inline-flex h-12 items-center gap-2 rounded-xl bg-white px-6 text-[15px] font-semibold text-ember-700 shadow-lift transition hover:bg-white/90"
             >
               <Zap className="size-4" /> Generate a campaign now

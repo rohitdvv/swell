@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Card, Badge, Segmented } from "@/components/ui";
 import { toast } from "@/components/toaster";
+import { AuthNav } from "@/components/auth-nav";
 import {
   PLANS,
   PLAN_ORDER,
@@ -31,7 +32,7 @@ export default function PricingPage() {
       const data = await res.json();
       if (data.needAuth) {
         toast("Create an account first — it takes 20 seconds.", "info");
-        window.location.assign("/auth?next=/pricing");
+        window.location.assign("/sign-up");
         return;
       }
       if (data.url) {
@@ -60,19 +61,11 @@ export default function PricingPage() {
         <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
           <Logo />
           <nav className="ml-auto flex items-center gap-3">
-            <Link href="/auth" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
-              Sign in
-            </Link>
             <Link href="/account" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
               Account
             </Link>
             <ThemeToggle />
-            <Link
-              href="/console"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ember-gradient px-3.5 text-sm font-medium text-white shadow-ember"
-            >
-              Console <ArrowRight className="size-3.5" />
-            </Link>
+            <AuthNav />
           </nav>
         </div>
       </header>
