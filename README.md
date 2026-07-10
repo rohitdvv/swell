@@ -10,7 +10,7 @@ This is the **operator side**: the Generator, the public Campaign Artifact, and 
 internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
 
 [![CI](https://github.com/rohitdvv/swell/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/swell/actions/workflows/ci.yml)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/swell&env=SWELL_SESSION_SECRET&envDescription=Random%20string%20that%20signs%20auth%20session%20cookies)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/swell&env=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,CLERK_SECRET_KEY&envDescription=Clerk%20keys%20for%20Google%20%2B%20email%20sign-in)
 
 ![Landing](docs/landing.png)
 
@@ -29,10 +29,11 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 ## The flow (enterprise)
 
 **Sign up → sign in → choose a plan → pay (Stripe / demo) → Console.**
-`/auth` creates the account (scrypt-hashed passwords, httpOnly sessions), `/pricing`
-starts checkout for the signed-in account, and `/console` is gated: unauthenticated
+**Clerk** handles identity (Google or email) at `/sign-up` and `/sign-in`, `/pricing`
+starts Stripe checkout for the signed-in account, and `/console` is gated: signed-out
 visitors are redirected to sign-in, signed-in users without an active subscription are
-sent to pick a plan.
+sent to pick a plan. The landing page, `/pricing`, the live `/demo` and every published
+campaign URL stay public.
 
 ## The three pieces
 
@@ -128,12 +129,35 @@ owner's question, and answers **only from those facts** — no invented numbers.
 - **With `ANTHROPIC_API_KEY` or free `GROQ_API_KEY`:** full LLM generation grounded in the
   retrieved chunks (classic RAG), same no-hallucination system prompt.
 
-### Report — sales & projection infographics
-The **Report** tab charts the story an owner actually asks for: last-30-days vs
-projected-next-30 (before/after with uplift), net sales by day-of-week, a projected
-daily-revenue curve with **live-event markers**, daypart mix with targeted windows
-highlighted, top items, payment mix — all dependency-free theme-aware SVG
-(`src/components/charts.tsx`).
+### The money question, answered first
+Last-30-days vs projected-next-30 sits **above the tabs**, not behind one: the two bars,
+the uplift, and the projected range with a confidence label. Nothing about the campaign
+is worth reading until the owner knows what it is worth.
+
+### A range, not a promise
+Two inputs cannot be measured from a POS export — how many guests act on an offer, and
+how much of that spend is genuinely new rather than a discount handed to someone already
+walking in. So Swell does not decorate a point estimate with an invented ±. It re-runs
+the *same* projection at the pessimistic and optimistic edges of both, and shows the
+band (`src/lib/validate.ts`). Thin sales history widens it. Confidence is **capped at
+moderate** while demand signals are simulated, and drops to **low** under 21 days of
+history — the product tells you when to trust it less.
+
+The Report lists every assumption tagged `measured` / `assumed` / `simulated`, plus the
+checks actually run against the generated plan: 30 days present, discounts inside the
+10–45% guardrail, **redemptions never exceeding expected covers**, weather on every day,
+captions under 80 characters, uplift a plausible size. Failures are shown, not hidden.
+
+### Run history
+Regenerating replaces a campaign, so every generation is logged to `campaign_runs`: when
+it ran, what it read (forecast vs seasonal days, event days), what it projected, the
+confidence, and how many checks passed. A regenerate cannot quietly rewrite what the
+brain told you last week.
+
+### Report — sales infographics
+The **Report** tab charts the rest: net sales by day-of-week, a projected daily-revenue
+curve with **live-event markers**, daypart mix with targeted windows highlighted, top
+items, payment mix — all dependency-free theme-aware SVG (`src/components/charts.tsx`).
 
 ## How the brain works
 
@@ -188,13 +212,15 @@ annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-la
 - **No key? Demo mode.** The flow still works end-to-end — it activates a demo subscription
   against the entered email so you can see the paywall, account page, usage metering and plan
   gating without any setup.
-- Sessions are a signed, http-only cookie (email-keyed account); Stripe webhooks keep the
-  subscription lifecycle in sync (`/api/stripe/webhook`).
+- Clerk owns the session; the email is the account key and is mirrored into the local
+  `users` table on first sight. Stripe webhooks keep the subscription lifecycle in sync
+  (`/api/stripe/webhook`), and `/api/billing/bind` refuses a Checkout session that does
+  not belong to the signed-in email.
 
 ## Environment
 
-Copy `.env.example` → `.env.local`. All values are optional — see the file for details
-(`SWELL_SESSION_SECRET`, optional LLM keys, `DATABASE_URL`).
+Copy `.env.example` → `.env.local`. Sign-in needs the two Clerk keys; everything else is
+an optional upgrade — see the file for details.
 
 ## API keys & tokens — exactly what unlocks what
 
@@ -203,7 +229,8 @@ degrades gracefully without it.
 
 | Key | Cost | What it unlocks | Without it |
 |---|---|---|---|
-| *(none)* | — | Full pipeline: parsing, 10-agent brain, live weather/holidays/geocoding, posters, charts, assistant | — |
+| *(none)* | — | Full pipeline: parsing, 10-agent brain, live weather + seasonal normals, holidays, geocoding, posters, charts, projection range, assistant | — |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` | free tier | Sign up / sign in with Google or email; the gated console | public pages only — no console |
 | `GROQ_API_KEY` | free | LLM captions + LLM RAG-assistant answers | deterministic on-brand engine (still good) |
 | `ANTHROPIC_API_KEY` | paid | Claude-quality captions + assistant answers | same as above |
 | `TICKETMASTER_API_KEY` | free | **Real concerts & sports** near the venue in the Events Agent | public holidays only |
@@ -226,7 +253,7 @@ module** to compile, so it deploys cleanly to Vercel serverless.
 2. **Import this repo into Vercel** ("New Project" → pick `rohitdvv/swell`).
 3. **Set env vars** in Vercel → Settings → Environment Variables:
    - `DATABASE_URL` = your Neon string
-   - `SWELL_SESSION_SECRET` (any random string — signs session cookies)
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` (Clerk → API keys)
    - `NEXT_PUBLIC_BASE_URL` = your deployed URL (for share/OG images)
    - *(optional)* `STRIPE_SECRET_KEY` (test key) + `STRIPE_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`/`GROQ_API_KEY`
 4. **Deploy.** Tables auto-create on first request. Done — a live, persistent URL.

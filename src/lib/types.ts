@@ -214,5 +214,31 @@ export type Campaign = {
   published_at: string | null;
 };
 
+/**
+ * One generation of a campaign. Regenerating replaces the campaign (its public
+ * URL must stay stable), so this is the only durable record that a run
+ * happened, what it read, and what it projected at the time.
+ */
+export type CampaignRun = {
+  id: string;
+  email: string | null;
+  campaign_id: string;
+  campaign_slug: string;
+  restaurant_name: string;
+  location: string | null;
+  created_at: string;
+  duration_ms: number;
+  baseline_revenue: number;
+  projected_low: number;
+  projected_expected: number;
+  projected_high: number;
+  confidence: "low" | "moderate" | "high";
+  checks_passed: number;
+  checks_total: number;
+  forecast_days: number;
+  seasonal_days: number;
+  event_days: number;
+};
+
 export type CampaignRecord = Omit<Campaign, "days"> & { days?: CampaignDay[] };
 export type CampaignWithDays = Campaign & { days: CampaignDay[] };

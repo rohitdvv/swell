@@ -1,6 +1,7 @@
 import "server-only";
 import type { CampaignWithDays, CampaignDay } from "./types";
 import { formatCurrency, formatNumber, dowFull, formatShortDate } from "./utils";
+import { validateProjection } from "./validate";
 
 // ============================================================
 // Swell Assistant — RAG over the owner's own campaign.
@@ -44,6 +45,21 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
       s.date_range?.days ?? 30
     } days). Projected redemptions: ${formatNumber(c.projected_redemptions)}.`,
     tags: ["revenue", "money", "projected", "incremental", "lift", "redemptions", "baseline", "sales", "earn", "profit"],
+  });
+
+  // The owner can see a range and a confidence label on screen — the assistant
+  // has to be able to explain both, or it looks like it's hiding the method.
+  const v = validateProjection(c);
+  const failed = v.checks.filter((ck) => !ck.ok);
+  facts.push({
+    id: "projection-range",
+    text: `The projection is a range, not a promise: ${money(v.low)} to ${money(v.high)}, with ${money(v.expected)} as the expected case. Confidence: ${v.confidence}. ${v.confidenceReason} ${v.bandReason} Two inputs cannot be measured from a POS export — the share of guests who respond to an offer, and how much of that revenue is genuinely new rather than a discount given to someone already walking in. The range is the same projection re-run at the pessimistic and optimistic edges of both.`,
+    tags: ["range", "confidence", "band", "low", "high", "accurate", "accuracy", "sure", "certain", "trust", "assumption", "assumptions", "estimate", "guarantee", "reliable", "how", "why"],
+  });
+  facts.push({
+    id: "projection-checks",
+    text: `${v.checks.filter((ck) => ck.ok).length} of ${v.checks.length} validation checks passed on this plan: ${v.checks.map((ck) => `${ck.label} (${ck.ok ? "pass" : "FAIL"}: ${ck.detail})`).join("; ")}.${failed.length ? ` Failing: ${failed.map((ck) => ck.label).join(", ")}.` : ""}`,
+    tags: ["checks", "validation", "validated", "verify", "verified", "passed", "failed", "guardrail", "sanity"],
   });
 
   if (s.by_dayofweek) {
@@ -216,7 +232,19 @@ function rulesAnswer(
 }
 
 // ---- optional LLM (real RAG generation) ---------------------
-const SYSTEM = `You are Swell's assistant, helping a restaurant owner understand their 30-day campaign. Answer ONLY from the provided campaign facts — never invent numbers. Be concise (2-5 sentences), warm, plain-spoken, no jargon. If the facts don't cover it, say so and suggest what to check in the dashboard.`;
+const SYSTEM = `You are Swell's assistant, helping a restaurant owner understand their 30-day campaign.
+
+Answer ONLY from the provided campaign facts. Be concise (2-5 sentences), warm, plain-spoken, no jargon.
+
+Hard rules:
+- Never invent a number. If a figure is in the facts, quote it exactly; if it isn't, don't state one.
+- Never invent a product feature, screen, tab, button, or capability. Swell does not track actual
+  results against the projection, so never suggest the owner "compare actual vs projected" or
+  "check back later to see how it performed."
+- If the facts don't cover the question, say plainly that you don't have it, and stop. Do not
+  guess at where the owner might find it.
+- When the question is about accuracy or confidence, give the actual range and confidence level
+  from the facts and say which inputs are assumed rather than measured.`;
 
 async function llmAnswer(question: string, chunks: Fact[]): Promise<string | null> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;

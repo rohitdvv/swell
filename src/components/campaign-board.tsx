@@ -43,6 +43,7 @@ import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
 import { CampaignReport } from "@/components/campaign-report";
+import { MoneyHeadline } from "@/components/projection-panel";
 import { AssistantWidget } from "@/components/assistant-widget";
 
 const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -131,6 +132,9 @@ export function CampaignBoard({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         {/* ---------- main ---------- */}
         <div className="order-2 lg:order-1">
+          {/* the money question, answered before anything else */}
+          <MoneyHeadline campaign={{ ...campaign, days }} />
+
           {/* strategy notes */}
           <Card className="mb-5 overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-5 py-3.5">

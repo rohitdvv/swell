@@ -98,16 +98,37 @@ flowchart TB
 Per day (`src/lib/project.ts`):
 
 ```
-reachable      = (dow_orders / dow_occurrences) × daypart_share
-response_rate  = clamp(0.12 + pct_off/100 × 0.7, 0.10, 0.55)
+reachable      = (dow_orders / dow_occurrences) × daypart_share      # measured
+response_rate  = (0.12 + pct_off/100 × 0.7) × responseScale          # ASSUMED
 redemptions    = max(3, reachable × response_rate × marketplace_lift)
-incremental $  = redemptions × avg_check × (1 − pct_off) × 0.55
+incremental $  = redemptions × avg_check × (1 − pct_off) × incrementality  # ASSUMED
 ```
 
 Weather/event deltas shift `pct_off` (±3–5pts) and item selection (comfort vs light
-affinity regexes); events multiply expected covers (prep hint). Every figure shown in
-the UI (Report charts, sidebar, assistant) derives from these persisted numbers —
-nothing is invented at render time.
+affinity regexes); events multiply expected covers (prep hint). A seasonal-normal day
+moves `pct_off` half as far as a forecast day. Every figure shown in the UI (Report
+charts, sidebar, assistant) derives from these persisted numbers — nothing is invented
+at render time.
+
+### Confidence range (`src/lib/validate.ts`)
+
+`responseScale` and `incrementality` are the two inputs a POS export cannot reveal: how
+many guests act on an offer, and how much of that spend is genuinely new. Rather than
+decorate the point estimate with an invented ±, `validate.ts` re-runs the *same*
+`projectDay()` at the pessimistic and optimistic edges of both — a sensitivity analysis:
+
+```
+spread         = min(0.75, 0.40 × volumeFactor(days_of_history))
+low            = Σ projectDay(day, responseScale = 1 − spread, incrementality = 0.40)
+expected       = Σ projectDay(day, responseScale = 1,          incrementality = 0.55)
+high           = Σ projectDay(day, responseScale = 1 + spread, incrementality = 0.70)
+```
+
+Thin history widens the band (`volumeFactor` ≤ 1.5). Confidence is **capped at moderate**
+while the demand multiplier is simulated, and drops to **low** under 21 days of history.
+The same module runs real checks against the generated plan (30 days present, discounts
+in the 10–45% guardrail, redemptions never exceeding expected covers, weather on every
+day, captions under 80 chars, uplift a plausible size) and reports what failed.
 
 ## Real-time context loop
 
@@ -127,31 +148,34 @@ nothing is invented at render time.
 ```mermaid
 sequenceDiagram
   participant U as Owner
-  participant A as /auth
+  participant K as Clerk
   participant P as /pricing
   participant S as Stripe
   participant DB as Postgres
   participant C as /console
 
-  U->>A: Sign up (name, email, password)
-  A->>DB: users.insert (scrypt hash)
-  A-->>U: httpOnly HMAC session cookie
+  U->>K: Sign up / in (Google or email)
+  K-->>U: Clerk session
   U->>P: Choose plan (monthly/annual)
   alt Stripe key configured
-    P->>S: Checkout session (test or live)
+    P->>S: Checkout session (client_reference_id = email)
     S-->>DB: webhook → subscriptions.upsert
   else demo mode (no key)
     P->>DB: subscriptions.upsert (mode: demo)
   end
   U->>C: Open console
-  C->>DB: session → user + active subscription?
-  C-->>U: gated: unauthed → /auth · unsubscribed → /pricing · ok → Console
+  C->>DB: Clerk email → user row (mirrored) + active subscription?
+  C-->>U: gated: signed out → /sign-in · unsubscribed → /pricing · ok → Console
 ```
 
-- **Passwords**: `scrypt` (N=16384, r=8, p=1), per-user salt, timing-safe compare — node
-  stdlib, no dependencies (`src/lib/auth.ts`).
-- **Sessions**: email signed with HMAC-SHA256 (`SWELL_SESSION_SECRET`) in an httpOnly,
-  SameSite=Lax cookie (`src/lib/billing/account.ts`).
+- **Identity**: **Clerk** (`@clerk/nextjs`), Google + email. `src/proxy.ts` protects only
+  `/console`, `/account` and the mutating API routes — the landing page, `/pricing`,
+  `/demo` and the public campaign artifact stay open. The hand-rolled scrypt/HMAC auth
+  was deleted.
+- **Mirroring**: the Clerk email is the account key; `getAccount()` creates the local
+  `users` row on first sight (`src/lib/billing/account.ts`).
+- **Binding**: `/api/billing/bind` refuses a Checkout session whose `client_reference_id`
+  is not the signed-in email, and requires `status === "complete"`.
 - **Plans**: Starter/Pro/Agency with limits (restaurants, campaigns/month, ad kit,
   auto-publish, white-label) in `src/lib/billing/plans.ts`; usage metered from the DB.
 
@@ -207,7 +231,22 @@ erDiagram
     text event_json
     text creative_url
   }
+  campaign_runs {
+    text id PK
+    text email FK
+    text campaign_slug
+    text created_at
+    real projected_low
+    real projected_expected
+    real projected_high
+    text confidence
+    int checks_passed
+  }
 ```
+
+`campaign_runs` exists because regenerating **replaces** the campaign row (its public URL
+must stay stable). Without the run log there would be no record that an earlier
+generation ever happened, or what it projected at the time.
 
 **Storage**: one SQL dialect (Postgres) everywhere — embedded **PGlite** (WASM) in dev,
 **Neon**/any Postgres in prod via `DATABASE_URL`. No native modules → clean Vercel
@@ -218,8 +257,8 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/auth/signup · signin · logout` | POST | account lifecycle (session cookie) |
-| `/api/billing/checkout` | POST | Stripe Checkout (or instant demo sub); requires session |
+| `/sign-in` `/sign-up` | — | Clerk-hosted auth (Google + email); no hand-rolled sessions |
+| `/api/billing/checkout` | POST | Stripe Checkout (or instant demo sub); requires signed-in user |
 | `/api/billing/me` | GET | user + subscription + plan + usage |
 | `/api/billing/portal · bind` | POST | Stripe billing portal / post-checkout cookie bind |
 | `/api/stripe/webhook` | POST | subscription lifecycle sync (signature-verified) |
@@ -229,15 +268,16 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
 | `/api/campaigns` `[slug]` `[slug]/action` | GET/POST/DELETE | list/read/activate/publish/archive |
 | `/api/campaign-days/[id]` | PATCH | inline edit; projections recompute server-side |
 | `/api/creative/[file]` | GET | poster/ad PNG (sharp; disk-cached; `?ratio=` for ad sizes) |
+| `/api/runs` | GET | this account's generation history (projection, band, confidence, checks) |
 | `/api/assistant` | POST | grounded Q&A over one campaign |
 
 ## Deployment topology
 
 - **Vercel** (Node serverless functions) + **Neon** Postgres — both free tier.
 - Weather/geocoding/holidays are keyless public APIs called at request time.
-- Env: `DATABASE_URL`, `SWELL_SESSION_SECRET`, `NEXT_PUBLIC_BASE_URL`; optional
-  `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`/`GROQ_API_KEY`,
-  `TICKETMASTER_API_KEY`.
+- Env: `DATABASE_URL`, `NEXT_PUBLIC_BASE_URL`, Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+  `CLERK_SECRET_KEY`); optional `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`,
+  `ANTHROPIC_API_KEY`/`GROQ_API_KEY`, `TICKETMASTER_API_KEY`.
 - CI: GitHub Actions (`npm ci → lint → build`) on every push/PR.
 
 ## Honesty guarantees (by design)
@@ -247,6 +287,14 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
 - The assistant answers **only** from persisted campaign facts and says so when it can't.
 - Projections show their inputs (Report → "What the brain read") and recompute through
   the same `project.ts` math when a day is edited.
+- The headline number is always shown as a **range with a confidence label**, and every
+  assumption behind it is tagged `measured` / `assumed` / `simulated` in the Report.
+- Weather past the 16-day forecast horizon is a labelled **seasonal estimate**, never
+  presented as a forecast, and is withheld from the copywriter.
+- Every generation is logged to `campaign_runs`, so a regenerate cannot quietly rewrite
+  what the brain projected last week.
+- The assistant is forbidden from inventing product features — it will not tell an owner
+  to "compare actual vs projected", because Swell does not track that.
 
 ## Scaling path (not yet built)
 

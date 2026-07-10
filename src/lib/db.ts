@@ -6,6 +6,7 @@ import type {
   Campaign,
   CampaignDay,
   CampaignWithDays,
+  CampaignRun,
   BrandKit,
   MarketplaceSignals,
   ParsedSalesSummary,
@@ -168,6 +169,31 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       edited INTEGER NOT NULL DEFAULT 0
     )`);
   await exec(`CREATE INDEX IF NOT EXISTS idx_days_campaign ON campaign_days(campaign_id)`);
+  // Every generation, kept even after the campaign it produced is replaced.
+  // Regenerating overwrites the campaign (the public URL must stay stable),
+  // so this is the only record that a given run ever happened.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS campaign_runs (
+      id TEXT PRIMARY KEY,
+      email TEXT,
+      campaign_id TEXT NOT NULL,
+      campaign_slug TEXT NOT NULL,
+      restaurant_name TEXT NOT NULL,
+      location TEXT,
+      created_at TEXT NOT NULL,
+      duration_ms REAL NOT NULL DEFAULT 0,
+      baseline_revenue REAL NOT NULL DEFAULT 0,
+      projected_low REAL NOT NULL DEFAULT 0,
+      projected_expected REAL NOT NULL DEFAULT 0,
+      projected_high REAL NOT NULL DEFAULT 0,
+      confidence TEXT NOT NULL DEFAULT 'moderate',
+      checks_passed INTEGER NOT NULL DEFAULT 0,
+      checks_total INTEGER NOT NULL DEFAULT 0,
+      forecast_days INTEGER NOT NULL DEFAULT 0,
+      seasonal_days INTEGER NOT NULL DEFAULT 0,
+      event_days INTEGER NOT NULL DEFAULT 0
+    )`);
+  await exec(`CREATE INDEX IF NOT EXISTS idx_runs_email ON campaign_runs(email, created_at)`);
   await exec(`
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
@@ -460,6 +486,64 @@ export const repo = {
 
   async deleteCampaign(id: string): Promise<void> {
     await q(`DELETE FROM campaigns WHERE id=$1`, [id]);
+  },
+
+  // ---- run history ----
+  async recordRun(run: CampaignRun): Promise<void> {
+    await q(
+      `INSERT INTO campaign_runs (
+        id, email, campaign_id, campaign_slug, restaurant_name, location, created_at,
+        duration_ms, baseline_revenue, projected_low, projected_expected, projected_high,
+        confidence, checks_passed, checks_total, forecast_days, seasonal_days, event_days
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+      [
+        run.id,
+        run.email,
+        run.campaign_id,
+        run.campaign_slug,
+        run.restaurant_name,
+        run.location,
+        run.created_at,
+        run.duration_ms,
+        run.baseline_revenue,
+        run.projected_low,
+        run.projected_expected,
+        run.projected_high,
+        run.confidence,
+        run.checks_passed,
+        run.checks_total,
+        run.forecast_days,
+        run.seasonal_days,
+        run.event_days,
+      ]
+    );
+  },
+
+  async listRuns(email: string, limit = 20): Promise<CampaignRun[]> {
+    const rows = await q(
+      `SELECT * FROM campaign_runs WHERE email=$1 ORDER BY created_at DESC LIMIT $2`,
+      [email.toLowerCase(), limit]
+    );
+    return rows.map((r) => ({
+      id: r.id as string,
+      email: (r.email as string) ?? null,
+      campaign_id: r.campaign_id as string,
+      campaign_slug: r.campaign_slug as string,
+      restaurant_name: r.restaurant_name as string,
+      location: (r.location as string) ?? null,
+      created_at: r.created_at as string,
+      duration_ms: num(r.duration_ms),
+      baseline_revenue: num(r.baseline_revenue),
+      projected_low: num(r.projected_low),
+      projected_expected: num(r.projected_expected),
+      projected_high: num(r.projected_high),
+      confidence: r.confidence as CampaignRun["confidence"],
+      checks_passed: num(r.checks_passed),
+      checks_total: num(r.checks_total),
+      forecast_days: num(r.forecast_days),
+      seasonal_days: num(r.seasonal_days),
+      event_days: num(r.event_days),
+    }));
   },
 
   async getMarketplaceSignal(key: string): Promise<MarketplaceSignals | null> {

@@ -29,7 +29,7 @@ import { Button, Badge, Card, Field, Input, Segmented } from "@/components/ui";
 import { CampaignBoard } from "@/components/campaign-board";
 import { toast } from "@/components/toaster";
 import { UserButton } from "@clerk/nextjs";
-import type { ParsedSalesSummary, CampaignWithDays, Campaign } from "@/lib/types";
+import type { ParsedSalesSummary, CampaignWithDays, Campaign, CampaignRun } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
 type Gate = "loading" | "unsubscribed" | "ok";
@@ -97,6 +97,7 @@ function Console() {
   const [parsing, setParsing] = React.useState(false);
   const [result, setResult] = React.useState<CampaignWithDays | null>(null);
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
+  const [runs, setRuns] = React.useState<CampaignRun[]>([]);
   const [publishing, setPublishing] = React.useState(false);
 
   const loadCampaigns = React.useCallback(async () => {
@@ -104,9 +105,19 @@ function Console() {
     const data = await res.json();
     setCampaigns(data.campaigns || []);
   }, []);
+  const loadRuns = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/runs");
+      const data = await res.json();
+      setRuns(data.runs || []);
+    } catch {
+      /* history is nice-to-have; never block the console on it */
+    }
+  }, []);
   React.useEffect(() => {
     loadCampaigns();
-  }, [loadCampaigns]);
+    loadRuns();
+  }, [loadCampaigns, loadRuns]);
 
   async function handleFile(file: File) {
     setParsing(true);
@@ -162,6 +173,7 @@ function Console() {
       setResult(data.campaign);
       setPhase("result");
       loadCampaigns();
+      loadRuns();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Generation failed.", "error");
       setPhase("input");
@@ -317,6 +329,7 @@ function Console() {
             {campaigns.length > 0 && (
               <CampaignList campaigns={campaigns} onChange={loadCampaigns} className="mt-12" />
             )}
+            {runs.length > 0 && <RunHistory runs={runs} className="mt-12" />}
           </motion.div>
         )}
 
@@ -562,6 +575,105 @@ function GeneratingView({ hasUrl }: { hasUrl: boolean }) {
         })}
       </div>
     </motion.div>
+  );
+}
+
+const CONFIDENCE_TONE: Record<CampaignRun["confidence"], string> = {
+  high: "bg-mint-500/15 text-mint-600",
+  moderate: "bg-amber-500/15 text-amber-600",
+  low: "bg-rose-500/15 text-rose-600",
+};
+
+function relativeTime(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
+}
+
+/**
+ * Regenerating replaces a campaign, so without this the owner has no way to
+ * see what the brain projected last week versus today.
+ */
+function RunHistory({ runs, className }: { runs: CampaignRun[]; className?: string }) {
+  return (
+    <div className={className}>
+      <div className="mb-3 flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold text-fg-muted">Run history</h2>
+        <span className="text-xs text-fg-subtle">
+          Every generation, and what it projected at the time
+        </span>
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-fg-subtle">
+              <th className="px-4 py-2.5 font-medium">When</th>
+              <th className="px-4 py-2.5 font-medium">Restaurant</th>
+              <th className="px-4 py-2.5 font-medium">Read</th>
+              <th className="px-4 py-2.5 font-medium">Projected (low–high)</th>
+              <th className="px-4 py-2.5 font-medium">Confidence</th>
+              <th className="px-4 py-2.5 font-medium">Checks</th>
+              <th className="px-4 py-2.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {runs.map((r) => (
+              <tr key={r.id} className="border-b border-border last:border-0">
+                <td className="whitespace-nowrap px-4 py-3 text-fg-muted" title={r.created_at}>
+                  {relativeTime(r.created_at)}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="font-medium">{r.restaurant_name}</div>
+                  {r.location && <div className="text-xs text-fg-subtle">{r.location}</div>}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-xs text-fg-subtle">
+                  {r.forecast_days}d forecast
+                  {r.seasonal_days > 0 && ` + ${r.seasonal_days}d seasonal`}
+                  <br />
+                  {r.event_days} event days · {(r.duration_ms / 1000).toFixed(1)}s
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <div className="font-semibold tabular-nums">
+                    {formatCompactCurrency(r.projected_expected)}
+                  </div>
+                  <div className="text-xs tabular-nums text-fg-subtle">
+                    {formatCompactCurrency(r.projected_low)} –{" "}
+                    {formatCompactCurrency(r.projected_high)}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${CONFIDENCE_TONE[r.confidence]}`}
+                  >
+                    {r.confidence}
+                  </span>
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums">
+                  <span
+                    className={
+                      r.checks_passed === r.checks_total ? "text-mint-600" : "text-rose-600"
+                    }
+                  >
+                    {r.checks_passed}/{r.checks_total}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Link href={`/c/${r.campaign_slug}`} target="_blank">
+                    <Button variant="ghost" size="sm">
+                      <ExternalLink className="size-3.5" />
+                    </Button>
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
