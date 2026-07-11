@@ -162,6 +162,171 @@ export function AreaSpark({
   );
 }
 
+/**
+ * Revenue forecast: real daily history flowing into the projected next 30 days,
+ * with a shaded low→high confidence band. Crisp text (no aspect distortion) via
+ * a real coordinate viewBox. Theme-aware.
+ */
+export type ForecastPoint = {
+  date: string; // YYYY-MM-DD
+  value: number;
+  kind: "history" | "forecast";
+  low?: number;
+  high?: number;
+};
+
+export function ForecastChart({
+  series,
+  color,
+  historyColor = "var(--color-mint-500)",
+}: {
+  series: ForecastPoint[];
+  color: string;
+  historyColor?: string;
+}) {
+  const W = 820;
+  const H = 340;
+  const padL = 62;
+  const padR = 18;
+  const padT = 18;
+  const padB = 40;
+  const n = series.length;
+  if (n < 2) return null;
+
+  const maxRaw = Math.max(...series.map((p) => Math.max(p.value, p.high ?? 0)), 1);
+  const maxY = niceMax(maxRaw);
+  const x = (i: number) => padL + (i / (n - 1)) * (W - padL - padR);
+  const y = (v: number) => padT + (1 - v / maxY) * (H - padT - padB);
+
+  const firstForecast = series.findIndex((p) => p.kind === "forecast");
+  const boundary = firstForecast <= 0 ? n - 1 : firstForecast;
+
+  const path = (pts: { i: number; v: number }[]) =>
+    pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+
+  const hist = series.map((p, i) => ({ i, v: p.value })).slice(0, boundary + 1);
+  // forecast line continues from the last history point for a seamless join
+  const fc = series
+    .map((p, i) => ({ i, v: p.value }))
+    .slice(Math.max(0, boundary - (boundary > 0 && series[boundary - 1]?.kind === "history" ? 1 : 0)));
+  const fcOnly = series.filter((p) => p.kind === "forecast");
+
+  const histLine = path(hist);
+  const histArea = `${histLine} L${x(boundary).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`;
+  const fcLine = path(fc);
+
+  // confidence band (only where low/high exist)
+  const banded = series.map((p, i) => ({ i, p })).filter((o) => o.p.high != null && o.p.low != null);
+  let bandPath = "";
+  if (banded.length > 1) {
+    const top = banded.map((o) => `${x(o.i).toFixed(1)},${y(o.p.high!).toFixed(1)}`);
+    const bot = banded.map((o) => `${x(o.i).toFixed(1)},${y(o.p.low!).toFixed(1)}`).reverse();
+    bandPath = `M${top.join(" L")} L${bot.join(" L")} Z`;
+  }
+
+  const gy = [0, 0.25, 0.5, 0.75, 1];
+  const money = (v: number) =>
+    v >= 1000 ? `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `$${Math.round(v)}`;
+  const labelEvery = Math.max(1, Math.round(n / 9));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Revenue forecast">
+      <defs>
+        <linearGradient id="histFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={historyColor} stopOpacity="0.22" />
+          <stop offset="1" stopColor={historyColor} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {/* gridlines + y labels */}
+      {gy.map((g) => (
+        <g key={g}>
+          <line x1={padL} x2={W - padR} y1={y(maxY * g)} y2={y(maxY * g)} stroke="var(--border)" strokeWidth="1" strokeDasharray="3 4" />
+          <text x={padL - 8} y={y(maxY * g) + 4} textAnchor="end" fontSize="12" fill="var(--fg-subtle)">
+            {money(maxY * g)}
+          </text>
+        </g>
+      ))}
+
+      {/* today divider */}
+      <line x1={x(boundary)} x2={x(boundary)} y1={padT} y2={H - padB} stroke="var(--border-strong)" strokeWidth="1.5" />
+      <text x={x(boundary)} y={padT - 4} textAnchor="middle" fontSize="11" fill="var(--fg-subtle)">
+        today
+      </text>
+
+      {/* confidence band */}
+      {bandPath && <path d={bandPath} fill={color} opacity="0.14" />}
+
+      {/* history */}
+      <path d={histArea} fill="url(#histFill)" />
+      <path d={histLine} fill="none" stroke={historyColor} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* forecast */}
+      <path d={fcLine} fill="none" stroke={color} strokeWidth="2.6" strokeDasharray="1 0" strokeLinejoin="round" strokeLinecap="round" />
+      {fcOnly.map((p) => {
+        const i = series.indexOf(p);
+        return <circle key={p.date} cx={x(i)} cy={y(p.value)} r="3" fill={color} stroke="var(--surface)" strokeWidth="1.5" />;
+      })}
+
+      {/* x labels */}
+      {series.map((p, i) =>
+        i % labelEvery === 0 || i === n - 1 ? (
+          <text key={p.date} x={x(i)} y={H - padB + 18} textAnchor="middle" fontSize="11" fill="var(--fg-subtle)">
+            {p.date.slice(5)}
+          </text>
+        ) : null
+      )}
+    </svg>
+  );
+}
+
+/** Intensity grid — rows × cols, cell shaded by value (0..1). */
+export function Heatmap({
+  rows,
+  cols,
+  matrix,
+  color,
+}: {
+  rows: string[];
+  cols: string[];
+  matrix: number[][]; // rows × cols, values 0..1
+  color: string;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[420px]">
+        <div
+          className="grid gap-1"
+          style={{ gridTemplateColumns: `44px repeat(${cols.length}, minmax(0, 1fr))` }}
+        >
+          <div />
+          {cols.map((c) => (
+            <div key={c} className="pb-1 text-center text-[10px] font-medium text-fg-subtle">
+              {c}
+            </div>
+          ))}
+          {rows.map((r, ri) => (
+            <React.Fragment key={r}>
+              <div className="flex items-center text-[11px] font-medium text-fg-subtle">{r}</div>
+              {cols.map((c, ci) => {
+                const v = matrix[ri]?.[ci] ?? 0;
+                return (
+                  <div
+                    key={c}
+                    title={`${r} · ${c}: ${Math.round(v * 100)}% of peak`}
+                    className="aspect-[2/1] rounded-md border border-border/50"
+                    style={{ background: color, opacity: 0.08 + v * 0.92 }}
+                  />
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Donut for shares (payment mix, etc). */
 export function Donut({
   segments,

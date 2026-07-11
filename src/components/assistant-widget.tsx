@@ -9,10 +9,10 @@ import { cn } from "@/lib/utils";
 type Msg = { role: "user" | "assistant"; text: string };
 
 const STARTERS = [
-  "How much extra revenue will this make?",
-  "Why these discount percentages?",
-  "How does weather change the plan?",
-  "How do I edit a day?",
+  "What's the 30-day revenue forecast?",
+  "What's the offer on the 15th, and why?",
+  "Which event is driving a day this month?",
+  "When are my busiest hours?",
 ];
 
 export function AssistantWidget({

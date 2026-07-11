@@ -1,6 +1,13 @@
 import "server-only";
 import type { CampaignWithDays, CampaignDay } from "./types";
-import { formatCurrency, formatNumber, dowFull, formatShortDate } from "./utils";
+import {
+  formatCurrency,
+  formatNumber,
+  dowFull,
+  formatShortDate,
+  parseLocalDate,
+  MONTHS_FULL,
+} from "./utils";
 import { validateProjection } from "./validate";
 
 // ============================================================
@@ -88,6 +95,27 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
     });
   }
 
+  // Insights-tab numbers: 30-day revenue forecast + busiest service window.
+  {
+    const baselineDaily = c.baseline_revenue / 30;
+    const forecastTotal = Math.round(c.baseline_revenue + c.projected_revenue);
+    const dpEntries = Object.entries(s.by_daypart || {}).sort(
+      (a, b) => (b[1]?.orders ?? 0) - (a[1]?.orders ?? 0)
+    );
+    const busiestDaypart = dpEntries[0]?.[0];
+    facts.push({
+      id: "forecast",
+      text: `Revenue forecast (Insights tab): about ${money(forecastTotal)} total over the next 30 days — your ~${money(
+        baselineDaily
+      )}/day baseline plus ${money(c.projected_revenue)} incremental from the promotions, with a low-to-high band of ${money(
+        c.baseline_revenue + v.low
+      )}–${money(c.baseline_revenue + v.high)} at ${v.confidence} confidence. The forecast line is built from your real day-of-week sales pattern.${
+        busiestDaypart ? ` Your busiest service window is ${busiestDaypart}.` : ""
+      }`,
+      tags: ["forecast", "insights", "predict", "predicted", "projected", "next", "30", "total", "trend", "timeseries", "time", "series", "busy", "busiest", "peak", "heatmap", "window", "hour"],
+    });
+  }
+
   const strategyText = c.strategy_notes?.join(" ") || "";
   if (strategyText) {
     facts.push({
@@ -110,33 +138,46 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
   }
 
   for (const d of c.days) {
+    const dt = parseLocalDate(d.date);
+    const dayNum = dt.getDate();
+    const monthFull = MONTHS_FULL[dt.getMonth()].toLowerCase(); // "july"
+    const monthAbbr = monthFull.slice(0, 3); // "jul"
     const bits = [
-      `${dowFull(d.date)} ${formatShortDate(d.date)}: ${d.pct_off}% off ${d.item} during ${d.daypart} (${d.discount_window}).`,
-      `Projected ${formatNumber(d.projected_redemptions)} redemptions, ${money(d.projected_revenue)} incremental.`,
-      d.weather ? `Weather: ${d.weather.condition}, ${d.weather.tempF}°F.` : "",
-      d.event ? `Local event: ${d.event.name}.` : "",
-      d.context_note ? `Note: ${d.context_note}.` : "",
-      d.rationale ? `Why: ${d.rationale}.` : "",
+      `On ${dowFull(d.date)} ${monthFull} ${dayNum} (${d.date}): ${d.pct_off}% off ${d.item} during ${d.daypart} (${d.discount_window}).`,
+      `Projected ${formatNumber(d.projected_redemptions)} redemptions, ${money(d.projected_revenue)} incremental revenue.`,
+      d.weather
+        ? `Weather: ${d.weather.condition}, ${d.weather.tempF}°F${d.weather.source === "seasonal" ? " (seasonal estimate)" : ""}.`
+        : "",
+      d.event ? `Local event that day: ${d.event.name}${d.event.venue ? ` at ${d.event.venue}` : ""}.` : "",
+      d.context_note ? `Why this offer: ${d.context_note}.` : "",
+      d.rationale ? `Rationale: ${d.rationale}.` : "",
     ].filter(Boolean);
     facts.push({
       id: `day-${d.day_index}`,
       text: bits.join(" "),
+      // Rich date tokens so "july 15", "the 15th", "jul 15", "07-15" all hit.
       tags: [
         dowFull(d.date).toLowerCase(),
         d.date,
-        formatShortDate(d.date).toLowerCase(),
+        monthFull,
+        monthAbbr,
+        String(dayNum),
+        `${dayNum}th`,
+        `${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`,
         d.item.toLowerCase(),
         d.daypart.toLowerCase(),
+        d.event ? d.event.name.toLowerCase() : "",
         "day",
-        String(d.day_index + 1),
-      ],
+        "discount",
+        "offer",
+      ].filter(Boolean),
     });
   }
 
   facts.push({
     id: "howto",
-    text: `How to use Swell: "Activate campaign" sets the plan live. Click any day (calendar or poster) to edit its item, discount, window or copy — projections recompute instantly. The Posters tab has a downloadable branded poster for every day. The Report tab shows last-30-days vs projected charts. The Distribution tab packages Meta/Google-ready ad assets; connecting ad accounts requires the owner's own Meta/Google credentials.`,
-    tags: ["how", "activate", "edit", "change", "poster", "download", "report", "distribution", "connect", "ads", "publish", "help", "use"],
+    text: `How to use Swell: "Activate campaign" sets the plan live. Click any day (calendar or poster) to edit its item, discount, window or copy — projections recompute instantly. The Insights tab has the 30-day revenue forecast with a confidence band, a busy-window heatmap, and your item mix. The Posters tab has a downloadable branded poster for every day. The Report tab shows the projection validation and history charts. The Distribution tab packages Meta/Google-ready ad assets; connecting ad accounts requires the owner's own Meta/Google credentials.`,
+    tags: ["how", "activate", "edit", "change", "poster", "download", "insights", "forecast", "report", "distribution", "connect", "ads", "publish", "help", "use"],
   });
 
   if (c.marketplace) {
@@ -155,7 +196,10 @@ export function retrieve(
   facts: Fact[],
   k = 6
 ): { chunks: Fact[]; maxScore: number } {
-  const words = (question.toLowerCase().match(/[a-z0-9%']+/g) || []).filter((w) => w.length > 2);
+  // Keep short numeric tokens ("15", "4th") — they carry date/day meaning.
+  const words = (question.toLowerCase().match(/[a-z0-9%']+/g) || []).filter(
+    (w) => w.length > 2 || /^\d+$/.test(w)
+  );
   const scored = facts.map((f) => {
     const hay = (f.text + " " + f.tags.join(" ")).toLowerCase();
     let score = 0;
