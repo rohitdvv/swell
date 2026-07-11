@@ -50,6 +50,9 @@ export default function Landing() {
             <Link href="/demo" className="hidden text-sm text-white/70 hover:text-white sm:block">
               Live demo
             </Link>
+            <Link href="/pitch" className="hidden text-sm text-white/70 hover:text-white sm:block">
+              Pitch
+            </Link>
             <Link href="/pricing" className="hidden text-sm text-white/70 hover:text-white sm:block">
               Pricing
             </Link>

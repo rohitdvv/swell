@@ -162,9 +162,8 @@ Rules:
 - Do not invent facts. Only use the event/weather/offer you are given.`;
 
 async function llmBatch(inputs: CopyInput[]): Promise<string[] | null> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!anthropicKey && !groqKey) return null;
+  const { chatComplete, availableLlmProvider } = await import("./llm");
+  if (!availableLlmProvider()) return null;
 
   const userPayload = inputs.map((i, idx) => ({
     n: idx,
@@ -191,42 +190,19 @@ async function llmBatch(inputs: CopyInput[]): Promise<string[] | null> {
   const prompt = `Generate one line of copy (<80 chars) for each of these ${inputs.length} promos. Return ONLY a JSON array of strings in order.\n${JSON.stringify(userPayload)}`;
 
   try {
-    if (anthropicKey) {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey: anthropicKey });
-      const msg = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-      return parseLines(text, inputs.length);
-    }
-    if (groqKey) {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          temperature: 0.8,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: prompt },
-          ],
-        }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return parseLines(data.choices?.[0]?.message?.content ?? "", inputs.length);
-    }
+    const result = await chatComplete({
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 2000,
+      temperature: 0.8,
+    });
+    if (!result) return null;
+    return parseLines(result.text, inputs.length);
   } catch {
     return null;
   }
-  return null;
 }
 
 function parseLines(text: string, n: number): string[] | null {

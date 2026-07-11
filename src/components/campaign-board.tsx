@@ -21,6 +21,10 @@ import {
   Megaphone,
   Copy,
   Plug,
+  CalendarPlus,
+  Mail,
+  MessageSquare,
+  ExternalLink,
 } from "lucide-react";
 import type {
   CampaignWithDays,
@@ -45,6 +49,7 @@ import { toast } from "@/components/toaster";
 import { CampaignIntelligence } from "@/components/campaign-insights";
 import { MoneyHeadline } from "@/components/projection-panel";
 import { AssistantWidget } from "@/components/assistant-widget";
+import { floorScript } from "@/lib/calendar";
 
 const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -337,6 +342,8 @@ export function CampaignBoard({
             {campaign.context?.located && (
               <RealtimeContext context={campaign.context} brandColor={brandColor} />
             )}
+
+            <OperatorTools campaign={{ ...campaign, days }} brandColor={brandColor} />
             {/* The agent run is shown LIVE during generation and stored on the
                 run log — a static replay card here was noise. */}
           </div>
@@ -921,6 +928,81 @@ function PosterCard({
         </span>
       )}
     </motion.div>
+  );
+}
+
+/**
+ * Operator toolkit: Monday Brief, calendar subscribe, and floor SMS for today.
+ * This is the "shows up Monday morning" surface the product promise sells.
+ */
+function OperatorTools({
+  campaign,
+  brandColor,
+}: {
+  campaign: CampaignWithDays;
+  brandColor: string;
+}) {
+  const todayIso = React.useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }, []);
+  const today =
+    campaign.days.find((d) => d.date === todayIso) ||
+    campaign.days.find((d) => d.date >= todayIso) ||
+    campaign.days[0];
+
+  async function copyFloor() {
+    if (!today) return;
+    try {
+      await navigator.clipboard.writeText(floorScript(campaign, today));
+      toast("Floor script copied — text it to the team.", "success");
+    } catch {
+      toast("Could not copy.", "error");
+    }
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Mail className="size-4" style={{ color: brandColor }} />
+        <span className="text-sm font-semibold">Operator tools</span>
+      </div>
+      <div className="space-y-2">
+        <a
+          href={`/c/${campaign.slug}/brief`}
+          className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-sm transition hover:border-border-strong"
+        >
+          <Mail className="size-3.5 text-fg-subtle" />
+          <span className="flex-1 font-medium">Monday Brief</span>
+          <ExternalLink className="size-3.5 text-fg-subtle" />
+        </a>
+        <a
+          href={`/api/campaigns/${campaign.slug}/calendar`}
+          className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-sm transition hover:border-border-strong"
+        >
+          <CalendarPlus className="size-3.5 text-fg-subtle" />
+          <span className="flex-1 font-medium">Add to calendar</span>
+          <span className="text-[10px] uppercase tracking-wide text-fg-subtle">.ics</span>
+        </a>
+        <button
+          type="button"
+          onClick={copyFloor}
+          className="flex w-full items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-left text-sm transition hover:border-border-strong"
+        >
+          <MessageSquare className="size-3.5 text-fg-subtle" />
+          <span className="flex-1 font-medium">Copy floor script</span>
+          <Copy className="size-3.5 text-fg-subtle" />
+        </button>
+      </div>
+      {today && (
+        <p className="mt-3 text-xs text-fg-subtle">
+          Floor script targets{" "}
+          <strong className="text-fg-muted">
+            {formatShortDate(today.date)} · {today.pct_off}% {today.item}
+          </strong>
+        </p>
+      )}
+    </Card>
   );
 }
 

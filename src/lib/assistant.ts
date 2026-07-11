@@ -16,7 +16,7 @@ import { trainSalesModel } from "./model";
 //
 // 1. buildFacts() flattens the campaign into retrievable fact chunks
 // 2. retrieve() ranks chunks against the question (keyword overlap)
-// 3. With ANTHROPIC_API_KEY / GROQ_API_KEY → LLM answers grounded in
+// 3. With XAI_API_KEY / ANTHROPIC_API_KEY / GROQ_API_KEY → LLM answers grounded in
 //    the retrieved chunks. Without a key → intent-matched deterministic
 //    answers computed from the same facts. Never hallucinates numbers:
 //    every figure comes from the campaign row itself.
@@ -306,38 +306,20 @@ Hard rules:
   from the facts and say which inputs are assumed rather than measured.`;
 
 async function llmAnswer(question: string, chunks: Fact[]): Promise<string | null> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const groqKey = process.env.GROQ_API_KEY;
-  if (!anthropicKey && !groqKey) return null;
+  const { chatComplete, availableLlmProvider } = await import("./llm");
+  if (!availableLlmProvider()) return null;
   const context = chunks.map((f) => `- ${f.text}`).join("\n");
   const user = `Campaign facts:\n${context}\n\nOwner's question: ${question}`;
   try {
-    if (anthropicKey) {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey: anthropicKey });
-      const msg = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 500,
-        system: SYSTEM,
-        messages: [{ role: "user", content: user }],
-      });
-      return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim() || null;
-    }
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${groqKey}` },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.4,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: user },
-        ],
-      }),
+    const result = await chatComplete({
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: user },
+      ],
+      maxTokens: 500,
+      temperature: 0.4,
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content?.trim() || null;
+    return result?.text || null;
   } catch {
     return null;
   }

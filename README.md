@@ -126,8 +126,22 @@ weather/event rationale, top sellers, strategy notes, how-to), ranks them agains
 owner's question, and answers **only from those facts** — no invented numbers.
 
 - **Keyless:** intent-matched answers computed straight from the campaign data.
-- **With `ANTHROPIC_API_KEY` or free `GROQ_API_KEY`:** full LLM generation grounded in the
-  retrieved chunks (classic RAG), same no-hallucination system prompt.
+- **With `XAI_API_KEY` (Grok), `ANTHROPIC_API_KEY`, or free `GROQ_API_KEY`:** full LLM
+  generation grounded in the retrieved chunks (classic RAG), same no-hallucination system
+  prompt. Priority: xAI → Anthropic → Groq.
+
+### Monday Brief + calendar + floor script
+The product promise is that Swell **shows up Monday morning**. Every campaign has:
+
+- **`/c/[slug]/brief`** — a print- and email-ready week-ahead letter (weather, events,
+  prep covers, projected range). Copy to email/Slack, or print for the wall.
+- **`.ics` calendar** — `/api/campaigns/[slug]/calendar` subscribes every offer into
+  Google/Apple Calendar as all-day events with caption + prep notes.
+- **Floor script** — one-tap copy of today's offer for texting the team.
+
+### Investor pitch
+**`/pitch`** — a meeting-ready brief: problem, product, moat, business model, stack.
+Built for the raise as much as the restaurant sale.
 
 ### The money question, answered first
 Last-30-days vs projected-next-30 sits **above the tabs**, not behind one: the two bars,
@@ -184,9 +198,10 @@ The generator then:
   guardrail** (`copy.ts`), then renders a branded **social creative** (`creative.ts`, `sharp`).
 
 ### LLM copy (optional)
-Copy generation uses `ANTHROPIC_API_KEY` (Claude Sonnet, per spec) or a free `GROQ_API_KEY`
-if present, and otherwise a deterministic on-brand template engine — so the demo always works.
-The guardrail runs regardless and regenerates anything an LLM produces that fails.
+Copy generation uses `XAI_API_KEY` (Grok), `ANTHROPIC_API_KEY` (Claude), or a free
+`GROQ_API_KEY` if present — otherwise a deterministic on-brand template engine, so the
+demo always works with zero keys. The claims/length guardrail runs regardless and
+regenerates anything an LLM produces that fails.
 
 ---
 
