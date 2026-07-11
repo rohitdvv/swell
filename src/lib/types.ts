@@ -35,6 +35,13 @@ export const DAYPART_WINDOWS: Record<Daypart, string> = {
 };
 
 // ---- Input A: Parsed sales ----------------------------------
+/** One real day of history — the series the forecasting model trains on. */
+export type DailySales = {
+  date: string; // YYYY-MM-DD
+  net_sales: number;
+  orders: number;
+};
+
 export type ParsedSalesSummary = {
   restaurant_name: string;
   source: "toast" | "square" | "generic";
@@ -42,6 +49,8 @@ export type ParsedSalesSummary = {
   total_net_sales: number;
   guest_count: number;
   order_count: number;
+  /** Per-day revenue series (optional: absent on campaigns parsed before this existed). */
+  daily?: DailySales[];
   by_dayofweek: Record<
     DayOfWeek,
     { net_sales: number; orders: number; avg_check: number }

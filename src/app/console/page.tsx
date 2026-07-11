@@ -99,6 +99,7 @@ function Console() {
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
   const [runs, setRuns] = React.useState<CampaignRun[]>([]);
   const [publishing, setPublishing] = React.useState(false);
+  const [live, setLive] = React.useState<Record<string, LiveAgent>>({});
 
   const loadCampaigns = React.useCallback(async () => {
     const res = await fetch("/api/campaigns");
@@ -161,16 +162,58 @@ function Console() {
 
   async function generate() {
     if (!sales) return;
+    setLive({});
     setPhase("generating");
     try {
+      // Stream the run: the server emits an event as each agent starts and
+      // finishes, so the console shows the brain actually working.
       const res = await fetch("/api/generate", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", accept: "text/event-stream" },
         body: JSON.stringify({ sales, url: url.trim(), name: name.trim(), location: location.trim(), marketplace }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setResult(data.campaign);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Generation failed (${res.status}).`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let doneSlug: string | null = null;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const line = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          let evt: { type: string; agent?: string; role?: string; detail?: string; ms?: number; slug?: string; message?: string };
+          try {
+            evt = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+          if (evt.type === "agent:start" && evt.agent) {
+            setLive((m) => ({ ...m, [evt.agent!]: { status: "thinking" } }));
+          } else if (evt.type === "agent:done" && evt.agent) {
+            setLive((m) => ({ ...m, [evt.agent!]: { status: "done", detail: evt.detail, ms: evt.ms } }));
+          } else if (evt.type === "done" && evt.slug) {
+            doneSlug = evt.slug;
+          } else if (evt.type === "error") {
+            throw new Error(evt.message || "Generation failed.");
+          }
+        }
+      }
+
+      if (!doneSlug) throw new Error("The run ended without a result — try again.");
+      const cres = await fetch(`/api/campaigns/${doneSlug}`);
+      const cdata = await cres.json();
+      if (!cres.ok || !cdata.campaign) throw new Error("Generated, but could not load the campaign.");
+      setResult(cdata.campaign);
       setPhase("result");
       loadCampaigns();
       loadRuns();
@@ -333,7 +376,7 @@ function Console() {
           </motion.div>
         )}
 
-        {phase === "generating" && <GeneratingView key="gen" hasUrl={!!url.trim()} />}
+        {phase === "generating" && <GeneratingView key="gen" hasUrl={!!url.trim()} live={live} />}
 
         {phase === "result" && result && (
           <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -517,58 +560,85 @@ const GEN_STEPS = [
   { icon: TrendingUp, label: "Revenue Agent", sub: "redemptions × lift → incremental revenue" },
 ];
 
-function GeneratingView({ hasUrl }: { hasUrl: boolean }) {
-  const [active, setActive] = React.useState(0);
-  React.useEffect(() => {
-    const timers = GEN_STEPS.map((_, i) => setTimeout(() => setActive(i + 1), 550 * (i + 1)));
-    return () => timers.forEach(clearTimeout);
-  }, []);
+type LiveAgent = { status: "thinking" | "done"; detail?: string; ms?: number };
+
+/**
+ * The live run console. Every card is driven by REAL events streamed from the
+ * orchestrator — an agent flips to "thinking" the moment it starts and shows
+ * its actual finding (and how long it took) the moment it reports back.
+ */
+function GeneratingView({ hasUrl, live }: { hasUrl: boolean; live: Record<string, LiveAgent> }) {
+  const doneCount = Object.values(live).filter((a) => a.status === "done").length;
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6"
+      className="mx-auto flex min-h-[70vh] max-w-xl flex-col justify-center px-6 py-10"
     >
-      <div className="mb-8 text-center">
+      <div className="mb-7 text-center">
         <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-ember-gradient shadow-ember">
           <Sparkles className="size-6 text-white" />
         </div>
-        <h2 className="font-display text-3xl">The brain is cooking</h2>
-        <p className="text-sm text-fg-muted">A campaign that&apos;s been in the kitchen.</p>
+        <h2 className="font-display text-3xl">The brain is working</h2>
+        <p className="text-sm text-fg-muted">
+          {doneCount}/{GEN_STEPS.length} agents reported · live from the run
+        </p>
+        <div className="mx-auto mt-3 h-1 w-48 overflow-hidden rounded-full bg-surface-2">
+          <div
+            className="h-full bg-ember-gradient transition-all duration-500"
+            style={{ width: `${(doneCount / GEN_STEPS.length) * 100}%` }}
+          />
+        </div>
       </div>
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {GEN_STEPS.map((s, i) => {
-          const state = i < active ? "done" : i === active ? "active" : "todo";
+          const a = live[s.label] as LiveAgent | undefined;
+          const state: "todo" | "thinking" | "done" = a?.status ?? "todo";
           const Icon = s.icon;
-          if (i === 0 && !hasUrl) s = { ...s, sub: "neutral branding (no URL)" };
+          const waitingSub = i === 0 && !hasUrl ? "neutral branding (no URL)" : s.sub;
           return (
             <motion.div
-              key={i}
-              initial={{ opacity: 0.4 }}
-              animate={{ opacity: state === "todo" ? 0.4 : 1 }}
-              className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+              key={s.label}
+              initial={{ opacity: 0.35 }}
+              animate={{ opacity: state === "todo" ? 0.35 : 1, scale: state === "thinking" ? 1.01 : 1 }}
+              className={`flex items-start gap-3 rounded-xl border bg-surface px-4 py-3 ${
+                state === "thinking" ? "border-ember-400/60 shadow-ember" : "border-border"
+              }`}
             >
               <div
-                className={`flex size-8 items-center justify-center rounded-lg ${
+                className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
                   state === "done"
                     ? "bg-mint-500/15 text-mint-600"
-                    : state === "active"
-                    ? "bg-ember-gradient text-white"
-                    : "bg-surface-2 text-fg-subtle"
+                    : state === "thinking"
+                      ? "bg-ember-gradient text-white"
+                      : "bg-surface-2 text-fg-subtle"
                 }`}
               >
                 {state === "done" ? (
                   <Check className="size-4" />
-                ) : state === "active" ? (
+                ) : state === "thinking" ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Icon className="size-4" />
                 )}
               </div>
-              <div>
-                <div className="text-sm font-medium">{s.label}</div>
-                <div className="text-xs text-fg-subtle">{s.sub}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium">{s.label}</span>
+                  {state === "done" && a?.ms != null && (
+                    <span className="text-[10px] tabular-nums text-fg-subtle">
+                      {a.ms >= 1000 ? `${(a.ms / 1000).toFixed(1)}s` : `${a.ms}ms`}
+                    </span>
+                  )}
+                </div>
+                <div className={`text-xs ${state === "done" ? "text-fg-muted" : "text-fg-subtle"} text-pretty`}>
+                  {state === "done" && a?.detail
+                    ? a.detail
+                    : state === "thinking"
+                      ? "thinking…"
+                      : waitingSub}
+                </div>
               </div>
             </motion.div>
           );

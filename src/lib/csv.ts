@@ -191,9 +191,11 @@ export function summarize(
     );
   }
 
-  // aggregate by dow + daypart from orders
+  // aggregate by dow + daypart from orders, and keep the true per-day series
+  // (the forecasting model trains and backtests on `daily`).
   const byDow = emptyDow();
   const byDaypart = emptyDaypart();
+  const dailyMap = new Map<string, { net_sales: number; orders: number }>();
   let totalNet = 0;
   for (const o of orderMap.values()) {
     totalNet += o.net;
@@ -203,7 +205,14 @@ export function summarize(
     const dp: Daypart = o.hour != null ? daypartFromHour(o.hour) : "Dinner";
     byDaypart[dp].net_sales += o.net;
     byDaypart[dp].orders += 1;
+    const day = dailyMap.get(o.date) ?? { net_sales: 0, orders: 0 };
+    day.net_sales += o.net;
+    day.orders += 1;
+    dailyMap.set(o.date, day);
   }
+  const daily = [...dailyMap.entries()]
+    .map(([date, v]) => ({ date, net_sales: round2(v.net_sales), orders: v.orders }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
   for (const dow of DOW_NAMES) {
     byDow[dow].avg_check =
       byDow[dow].orders > 0 ? byDow[dow].net_sales / byDow[dow].orders : 0;
@@ -238,6 +247,7 @@ export function summarize(
     total_net_sales: round2(totalNet),
     guest_count,
     order_count,
+    daily,
     by_dayofweek: byDow,
     by_daypart: byDaypart,
     top_items,

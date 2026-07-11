@@ -42,8 +42,7 @@ import {
 import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
-import { CampaignReport } from "@/components/campaign-report";
-import { CampaignInsights } from "@/components/campaign-insights";
+import { CampaignIntelligence } from "@/components/campaign-insights";
 import { MoneyHeadline } from "@/components/projection-panel";
 import { AssistantWidget } from "@/components/assistant-widget";
 
@@ -81,7 +80,7 @@ export function CampaignBoard({
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
   const [activating, setActivating] = React.useState(false);
   const [view, setView] = React.useState<
-    "calendar" | "insights" | "posters" | "report" | "distribution"
+    "calendar" | "intelligence" | "posters" | "distribution"
   >("calendar");
 
   const brand = campaign.brand;
@@ -169,8 +168,7 @@ export function CampaignBoard({
               onChange={setView}
               options={[
                 { value: "calendar", label: "Calendar" },
-                { value: "insights", label: "Insights" },
-                { value: "report", label: "Report" },
+                { value: "intelligence", label: "Intelligence" },
                 { value: "posters", label: "Posters" },
                 { value: "distribution", label: "Distribution" },
               ]}
@@ -180,10 +178,8 @@ export function CampaignBoard({
 
           {view === "distribution" ? (
             <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
-          ) : view === "insights" ? (
-            <CampaignInsights campaign={{ ...campaign, days }} />
-          ) : view === "report" ? (
-            <CampaignReport campaign={{ ...campaign, days }} />
+          ) : view === "intelligence" ? (
+            <CampaignIntelligence campaign={{ ...campaign, days }} />
           ) : view === "calendar" ? (
             <>
               {/* calendar — desktop */}
@@ -341,10 +337,8 @@ export function CampaignBoard({
             {campaign.context?.located && (
               <RealtimeContext context={campaign.context} brandColor={brandColor} />
             )}
-
-            {campaign.agent_trace && campaign.agent_trace.length > 0 && (
-              <AgentTrace trace={campaign.agent_trace} brandColor={brandColor} />
-            )}
+            {/* The agent run is shown LIVE during generation and stored on the
+                run log — a static replay card here was noise. */}
           </div>
         </div>
       </div>
@@ -975,40 +969,6 @@ function RealtimeContext({
           </>
         )}
       </p>
-    </Card>
-  );
-}
-
-function AgentTrace({ trace, brandColor }: { trace: AgentEvent[]; brandColor: string }) {
-  const total = trace.reduce((a, e) => a + e.ms, 0);
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Cpu className="size-4" style={{ color: brandColor }} />
-        <span className="text-sm font-semibold">Agent activity</span>
-        <Badge tone="muted" className="ml-auto">
-          {trace.length} agents · {(total / 1000).toFixed(1)}s
-        </Badge>
-      </div>
-      <ol className="space-y-2.5">
-        {trace.map((e, i) => (
-          <li key={i} className="relative pl-5">
-            <span
-              className="absolute left-0 top-1.5 size-2 rounded-full"
-              style={{ background: brandColor }}
-            />
-            {i < trace.length - 1 && (
-              <span className="absolute left-[3.5px] top-3.5 h-full w-px bg-border" />
-            )}
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[13px] font-semibold">{e.agent}</span>
-              <span className="shrink-0 text-[10px] tabular-nums text-fg-subtle">{e.ms}ms</span>
-            </div>
-            <div className="text-[11px] text-fg-subtle">{e.role}</div>
-            <div className="mt-0.5 text-[11px] text-fg-muted">{e.detail}</div>
-          </li>
-        ))}
-      </ol>
     </Card>
   );
 }

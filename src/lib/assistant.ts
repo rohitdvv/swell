@@ -9,6 +9,7 @@ import {
   MONTHS_FULL,
 } from "./utils";
 import { validateProjection } from "./validate";
+import { trainSalesModel } from "./model";
 
 // ============================================================
 // Swell Assistant — RAG over the owner's own campaign.
@@ -95,7 +96,21 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
     });
   }
 
-  // Insights-tab numbers: 30-day revenue forecast + busiest service window.
+  // Learned model facts — trained + backtested on the uploaded daily series.
+  const learned = trainSalesModel(s);
+  if (learned) {
+    facts.push({
+      id: "model",
+      text: `A forecasting model (${learned.kind}) was trained on your ${learned.trainedDays} days of uploaded sales and backtested on the last ${learned.holdoutDays} days it never saw: mean error ±${money(learned.mae)}/day (${(learned.mape * 100).toFixed(1)}%). It learned: revenue is ${learned.trendPerWeek >= 0 ? "growing" : "declining"} ${money(Math.abs(learned.trendPerWeek))}/week (${(learned.trendPct * 100).toFixed(1)}%); your strongest day is ${learned.strongestDow} (${money(learned.dowEffect[learned.strongestDow])} above an average day) and your weakest is ${learned.weakestDow} (${money(Math.abs(learned.dowEffect[learned.weakestDow]))} below). ${
+        learned.anomalies.length
+          ? `Days that broke the pattern: ${learned.anomalies.map((a) => `${a.date} ${a.sigma > 0 ? "beat" : "missed"} expectations by ${money(Math.abs(a.actual - a.expected))}`).join("; ")}.`
+          : "No days broke the expected pattern."
+      } The campaign plan uses this to attack the weak days and protect the strong ones.`,
+      tags: ["model", "trained", "training", "learn", "learned", "machine", "ml", "backtest", "accuracy", "mae", "error", "trend", "growing", "declining", "pattern", "anomaly", "anomalies", "strongest", "weakest", "predict", "prediction"],
+    });
+  }
+
+  // Intelligence-tab numbers: 30-day revenue forecast + busiest service window.
   {
     const baselineDaily = c.baseline_revenue / 30;
     const forecastTotal = Math.round(c.baseline_revenue + c.projected_revenue);
@@ -176,8 +191,8 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
 
   facts.push({
     id: "howto",
-    text: `How to use Swell: "Activate campaign" sets the plan live. Click any day (calendar or poster) to edit its item, discount, window or copy — projections recompute instantly. The Insights tab has the 30-day revenue forecast with a confidence band, a busy-window heatmap, and your item mix. The Posters tab has a downloadable branded poster for every day. The Report tab shows the projection validation and history charts. The Distribution tab packages Meta/Google-ready ad assets; connecting ad accounts requires the owner's own Meta/Google credentials.`,
-    tags: ["how", "activate", "edit", "change", "poster", "download", "insights", "forecast", "report", "distribution", "connect", "ads", "publish", "help", "use"],
+    text: `How to use Swell: "Activate campaign" sets the plan live. Click any day (calendar or poster) to edit its item, discount, window or copy — projections recompute instantly. The Intelligence tab shows what the trained model learned from your sales (trend, strongest/weakest days, anomaly days), the 30-day forecast with an uncertainty band, a busy-window heatmap, your item mix, and the validation checks. The Posters tab has a downloadable branded poster for every day. The Distribution tab packages Meta/Google-ready ad assets; connecting ad accounts requires the owner's own Meta/Google credentials.`,
+    tags: ["how", "activate", "edit", "change", "poster", "download", "intelligence", "insights", "forecast", "report", "distribution", "connect", "ads", "publish", "help", "use", "tab"],
   });
 
   if (c.marketplace) {

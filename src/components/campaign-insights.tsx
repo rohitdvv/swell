@@ -1,17 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { LineChart, Flame, Utensils, Clock, TrendingUp, CalendarRange } from "lucide-react";
+import {
+  Brain,
+  LineChart,
+  Flame,
+  Utensils,
+  TrendingUp,
+  TrendingDown,
+  CalendarRange,
+  AlertTriangle,
+  Sparkles,
+} from "lucide-react";
 import type { CampaignWithDays, DayOfWeek, Daypart } from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
 import { Card } from "@/components/ui";
-import { ForecastChart, Heatmap, HBars, type ForecastPoint } from "@/components/charts";
+import { ForecastChart, Heatmap, HBars, Donut, type ForecastPoint } from "@/components/charts";
 import { validateProjection } from "@/lib/validate";
+import { trainSalesModel, type SalesModel } from "@/lib/model";
+import { ValidationCard } from "@/components/projection-panel";
 import {
   formatCompactCurrency,
   formatCurrency,
   formatNumber,
-  parseLocalDate,
+  formatShortDate,
   addDays,
   dowFull,
 } from "@/lib/utils";
@@ -36,48 +48,124 @@ const DOW_SHORT: Record<DayOfWeek, string> = {
 };
 
 /**
- * A dedicated analytics view: a revenue forecast (real history → projected next
- * 30 days, with a confidence band), a busy-window heatmap, and the item mix —
- * all derived from the same numbers the plan and the projection use.
+ * The Intelligence tab — one narrative, top to bottom:
+ *   1. What the model LEARNED from your history (trained + backtested)
+ *   2. What will happen next (forecast with an honest error band)
+ *   3. Where demand lives (heatmap) and what sells (item mix)
+ *   4. Why you can trust it (assumptions + checks)
  */
-export function CampaignInsights({ campaign }: { campaign: CampaignWithDays }) {
+export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays }) {
   const brand = campaign.brand?.primary_color || "#f75410";
   const s = campaign.sales_summary;
-  const v = React.useMemo(() => validateProjection(campaign), [campaign]);
 
+  const model = React.useMemo(() => trainSalesModel(s), [s]);
+  const v = React.useMemo(() => validateProjection(campaign), [campaign]);
   const { series, forecastTotal } = React.useMemo(
-    () => buildForecast(campaign),
-    [campaign]
+    () => buildForecast(campaign, model),
+    [campaign, model]
   );
 
-  // Busy-window heatmap: dow × daypart, intensity = order-share product.
   const { matrix, peakCell } = React.useMemo(() => buildHeatmap(s), [s]);
+  const items = (s.top_items || []).slice(0, 7).map((it) => ({ label: it.name, value: it.net_sales }));
 
-  const items = (s.top_items || []).slice(0, 7).map((it) => ({
-    label: it.name,
-    value: it.net_sales,
-  }));
-
-  const bestDow = [...DOW_ORDER]
-    .filter((d) => s.by_dayofweek?.[d])
-    .sort((a, b) => (s.by_dayofweek[b]?.net_sales ?? 0) - (s.by_dayofweek[a]?.net_sales ?? 0))[0];
+  const pay = s.payment_mix || { credit: 0, cash: 0, other: 0 };
+  const paySegments = [
+    { label: "Credit", value: pay.credit, color: brand },
+    { label: "Cash", value: pay.cash, color: "var(--color-mint-500)" },
+    { label: "Other", value: pay.other, color: "var(--border-strong)" },
+  ];
 
   return (
     <div className="space-y-5">
-      {/* ---- forecast hero ---- */}
+      {/* ============ 1 · WHAT THE MODEL LEARNED ============ */}
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3.5">
+          <Brain className="size-4" style={{ color: brand }} />
+          <span className="text-sm font-semibold">What the model learned from your sales</span>
+          {model ? (
+            <span className="ml-auto rounded-full bg-surface-2 px-2.5 py-1 font-mono text-[11px] text-fg-muted">
+              {model.kind} · {model.trainedDays}d train · backtest MAE ±{formatCurrency(model.mae)}/day
+            </span>
+          ) : (
+            <span className="ml-auto rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-600">
+              regenerate this campaign to train the model on your daily series
+            </span>
+          )}
+        </div>
+
+        {model && (
+          <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
+            <Learning
+              icon={
+                model.trendPerWeek >= 0 ? (
+                  <TrendingUp className="size-4" />
+                ) : (
+                  <TrendingDown className="size-4" />
+                )
+              }
+              tone={model.trendPerWeek >= 0 ? "up" : "down"}
+              kpi={`${model.trendPerWeek >= 0 ? "+" : "−"}${formatCompactCurrency(Math.abs(model.trendPerWeek))}/wk`}
+              label={`Revenue is ${model.trendPerWeek >= 0 ? "growing" : "declining"} ${(Math.abs(model.trendPct) * 100).toFixed(1)}% a week`}
+            />
+            <Learning
+              icon={<CalendarRange className="size-4" />}
+              tone="up"
+              kpi={DOW_SHORT[model.strongestDow]}
+              label={`Your strongest day — runs ${formatCompactCurrency(model.dowEffect[model.strongestDow])} above an average day`}
+            />
+            <Learning
+              icon={<CalendarRange className="size-4" />}
+              tone="down"
+              kpi={DOW_SHORT[model.weakestDow]}
+              label={`Your weakest day — ${formatCompactCurrency(Math.abs(model.dowEffect[model.weakestDow]))} below average. The plan attacks it`}
+            />
+            <Learning
+              icon={<Sparkles className="size-4" />}
+              tone="neutral"
+              kpi={`±${(model.mape * 100).toFixed(1)}%`}
+              label={`Backtest error on the last ${model.holdoutDays} days it never saw — how honest the forecast is`}
+            />
+          </div>
+        )}
+
+        {model && model.anomalies.length > 0 && (
+          <div className="border-t border-border px-5 py-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-fg-muted">
+              <AlertTriangle className="size-3.5 text-amber-500" /> Days that broke the pattern
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {model.anomalies.map((a) => (
+                <span
+                  key={a.date}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    a.sigma > 0 ? "bg-mint-500/12 text-mint-600" : "bg-rose-500/12 text-rose-600"
+                  }`}
+                  title={`expected ${formatCurrency(a.expected)}, actual ${formatCurrency(a.actual)}`}
+                >
+                  {formatShortDate(a.date)}: {a.sigma > 0 ? "beat" : "missed"} the model by{" "}
+                  {formatCompactCurrency(Math.abs(a.actual - a.expected))} ({a.sigma > 0 ? "+" : ""}
+                  {a.sigma.toFixed(1)}σ)
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* ============ 2 · THE FORECAST ============ */}
       <Card className="p-5 sm:p-6">
         <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-          <LineChart className="size-4" style={{ color: brand }} /> 30-day revenue forecast
+          <LineChart className="size-4" style={{ color: brand }} /> Next 30 days, predicted
         </div>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="font-display text-4xl tracking-tight">
-              {formatCurrency(forecastTotal)}{" "}
-              <span className="text-lg text-fg-subtle">projected</span>
+              {formatCurrency(forecastTotal)} <span className="text-lg text-fg-subtle">predicted</span>
             </div>
             <div className="mt-1 text-xs text-fg-subtle">
-              trained on {s.date_range?.days ?? 0} days of your sales · band{" "}
-              {formatCompactCurrency(v.baseline + v.low)}–{formatCompactCurrency(v.baseline + v.high)}
+              {model
+                ? `model prediction per day + campaign lift · band ${formatCompactCurrency(v.baseline + v.low)}–${formatCompactCurrency(v.baseline + v.high)}`
+                : `weekday-average baseline + campaign lift · band ${formatCompactCurrency(v.baseline + v.low)}–${formatCompactCurrency(v.baseline + v.high)}`}
             </div>
           </div>
           <span
@@ -87,33 +175,24 @@ export function CampaignInsights({ campaign }: { campaign: CampaignWithDays }) {
             <TrendingUp className="size-3.5" /> {v.confidence} confidence
           </span>
         </div>
-
         <div className="mt-4">
           <ForecastChart series={series} color={brand} />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-fg-subtle">
-          <Legend swatch="var(--color-mint-500)" label="Your history (daily pattern)" />
-          <Legend swatch={brand} label="Projected next 30 days" />
-          <Legend swatch={brand} faded label="Confidence band (low → high)" />
+          <Legend swatch="var(--color-mint-500)" label={model ? "Your actual daily sales" : "Weekday-pattern history"} />
+          <Legend swatch={brand} label="Predicted, day by day" />
+          <Legend swatch={brand} faded label="Uncertainty band" />
         </div>
       </Card>
 
-      {/* ---- KPIs ---- */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi icon={<CalendarRange className="size-4" />} label="Busiest day" value={bestDow ? DOW_SHORT[bestDow] : "—"} brand={brand} />
-        <Kpi icon={<Clock className="size-4" />} label="Peak window" value={peakCell} brand={brand} />
-        <Kpi icon={<Utensils className="size-4" />} label="Menu items sold" value={formatNumber(s.top_items?.length ?? 0)} brand={brand} />
-        <Kpi icon={<TrendingUp className="size-4" />} label="Avg check" value={formatCurrency(s.total_net_sales / Math.max(1, s.order_count))} brand={brand} />
-      </div>
-
       <div className="grid gap-5 lg:grid-cols-2">
-        {/* ---- busy-hour heatmap ---- */}
+        {/* ============ 3a · WHERE DEMAND LIVES ============ */}
         <Card className="p-5">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
-            <Flame className="size-4" style={{ color: brand }} /> Busy-window heatmap
+            <Flame className="size-4" style={{ color: brand }} /> Where your demand lives
           </div>
           <p className="mb-4 text-xs text-fg-subtle">
-            Where your demand concentrates, by day and service. Darker = busier.
+            Orders by day and service window — darker is busier. Peak: {peakCell}.
           </p>
           <Heatmap
             rows={DOW_ORDER.map((d) => DOW_SHORT[d])}
@@ -130,15 +209,47 @@ export function CampaignInsights({ campaign }: { campaign: CampaignWithDays }) {
           </div>
         </Card>
 
-        {/* ---- item mix ---- */}
+        {/* ============ 3b · WHAT SELLS ============ */}
         <Card className="p-5">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
-            <Utensils className="size-4" style={{ color: brand }} /> Where the money comes from
+            <Utensils className="size-4" style={{ color: brand }} /> What sells
           </div>
-          <p className="mb-4 text-xs text-fg-subtle">Top items by revenue in your upload.</p>
+          <p className="mb-4 text-xs text-fg-subtle">
+            Top items by revenue ({formatNumber(s.top_items?.length ?? 0)} tracked) · avg check{" "}
+            {formatCurrency(s.total_net_sales / Math.max(1, s.order_count))}
+          </p>
           <HBars data={items} color={brand} format={(nn) => formatCompactCurrency(nn)} />
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="mb-2 text-xs font-semibold text-fg-muted">Payment mix</div>
+            <Donut segments={paySegments} size={104} />
+          </div>
         </Card>
       </div>
+
+      {/* ============ 4 · WHY YOU CAN TRUST IT ============ */}
+      <ValidationCard campaign={campaign} />
+    </div>
+  );
+}
+
+function Learning({
+  icon,
+  tone,
+  kpi,
+  label,
+}: {
+  icon: React.ReactNode;
+  tone: "up" | "down" | "neutral";
+  kpi: string;
+  label: string;
+}) {
+  const toneCls =
+    tone === "up" ? "text-mint-600" : tone === "down" ? "text-rose-600" : "text-fg-muted";
+  return (
+    <div className="bg-surface p-4">
+      <div className={toneCls}>{icon}</div>
+      <div className="mt-1.5 font-display text-2xl tabular-nums leading-none">{kpi}</div>
+      <div className="mt-1.5 text-xs text-fg-subtle text-pretty">{label}</div>
     </div>
   );
 }
@@ -146,50 +257,27 @@ export function CampaignInsights({ campaign }: { campaign: CampaignWithDays }) {
 function Legend({ swatch, label, faded = false }: { swatch: string; label: string; faded?: boolean }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span
-        className="h-2.5 w-4 rounded-sm"
-        style={{ background: swatch, opacity: faded ? 0.2 : 1 }}
-      />
+      <span className="h-2.5 w-4 rounded-sm" style={{ background: swatch, opacity: faded ? 0.2 : 1 }} />
       {label}
     </span>
-  );
-}
-
-function Kpi({
-  icon,
-  label,
-  value,
-  brand,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  brand: string;
-}) {
-  return (
-    <Card className="p-4">
-      <div style={{ color: brand }}>{icon}</div>
-      <div className="mt-1.5 text-xl font-semibold tabular-nums leading-none">{value}</div>
-      <div className="mt-1 text-xs text-fg-subtle">{label}</div>
-    </Card>
   );
 }
 
 // ---- derivations ------------------------------------------------
 
 /**
- * Reconstruct a believable daily history from the real day-of-week averages,
- * then extend it into the projected next 30 days (baseline for that weekday +
- * the day's incremental), with a low/high band from the projection scenarios.
+ * History = the owner's REAL daily sales (last ≤30 days). Forecast = the
+ * trained model's per-day prediction plus that day's campaign lift, banded by
+ * the model's own noise floor (σ) plus the projection's low/high scenarios.
+ * Falls back to weekday averages when no daily series exists (old campaigns).
  */
-function buildForecast(campaign: CampaignWithDays): { series: ForecastPoint[]; forecastTotal: number } {
+function buildForecast(
+  campaign: CampaignWithDays,
+  model: SalesModel | null
+): { series: ForecastPoint[]; forecastTotal: number } {
   const s = campaign.sales_summary;
   const days = campaign.days;
-  const occ = Math.max(1, Math.round((s.date_range?.days ?? 30) / 7));
-  const dowAvg = (iso: string) => {
-    const d = dowFull(iso) as DayOfWeek;
-    return (s.by_dayofweek?.[d]?.net_sales ?? 0) / occ;
-  };
+  const start = days[0]?.date ?? campaign.start_date;
 
   const v = validateProjection(campaign);
   const lowR = v.expected > 0 ? v.low / v.expected : 0.6;
@@ -197,25 +285,42 @@ function buildForecast(campaign: CampaignWithDays): { series: ForecastPoint[]; f
 
   const series: ForecastPoint[] = [];
 
-  // history: the 21 days leading up to the campaign start
-  const start = days[0]?.date ?? campaign.start_date;
-  for (let i = 21; i >= 1; i--) {
-    const date = addDays(start, -i);
-    series.push({ date, value: Math.round(dowAvg(date)), kind: "history" });
+  if (model && s.daily?.length) {
+    for (const d of s.daily.slice(-30)) {
+      series.push({ date: d.date, value: Math.round(d.net_sales), kind: "history" });
+    }
+  } else {
+    // Legacy campaigns without a daily series: weekday-average reconstruction.
+    const occ = Math.max(1, Math.round((s.date_range?.days ?? 30) / 7));
+    for (let i = 21; i >= 1; i--) {
+      const date = addDays(start, -i);
+      const dow = dowFull(date) as DayOfWeek;
+      series.push({
+        date,
+        value: Math.round((s.by_dayofweek?.[dow]?.net_sales ?? 0) / occ),
+        kind: "history",
+      });
+    }
   }
 
-  // forecast: each campaign day = weekday baseline + incremental (+ band)
   let forecastTotal = 0;
   for (const d of days) {
-    const base = dowAvg(d.date);
+    const base = model
+      ? model.predict(d.date)
+      : (() => {
+          const occ = Math.max(1, Math.round((s.date_range?.days ?? 30) / 7));
+          const dow = dowFull(d.date) as DayOfWeek;
+          return (s.by_dayofweek?.[dow]?.net_sales ?? 0) / occ;
+        })();
     const value = Math.round(base + d.projected_revenue);
     forecastTotal += value;
+    const noise = model ? model.sigma : base * 0.2;
     series.push({
       date: d.date,
       value,
       kind: "forecast",
-      low: Math.round(base + d.projected_revenue * lowR),
-      high: Math.round(base + d.projected_revenue * highR),
+      low: Math.max(0, Math.round(base - noise + d.projected_revenue * lowR)),
+      high: Math.round(base + noise + d.projected_revenue * highR),
     });
   }
 

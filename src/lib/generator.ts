@@ -13,6 +13,7 @@ import type {
 import { DAYPARTS, DAYPART_WINDOWS } from "./types";
 import { generateCopyBatch, type CopyInput } from "./copy";
 import { projectDay } from "./project";
+import { trainSalesModel, modelSummary } from "./model";
 import { EMPTY_CONTEXT, type CampaignContext } from "./context";
 import {
   addDays,
@@ -407,6 +408,9 @@ export function assembleCampaign(
     meta.band,
     meta.heroMode
   );
+  // Learned model over the uploaded daily series (backtested — honest error).
+  const learned = trainSalesModel(sales);
+  if (learned) strategy_notes.unshift(modelSummary(learned));
   if (context.summary.located) {
     const s = context.summary;
     const tail = s.seasonal_days

@@ -83,7 +83,7 @@ Events ──────────────┘
 | **Location Agent** | Geocodes the venue to coordinates (Open-Meteo geocoding) |
 | **Weather Agent** | Pulls the **live 16-day forecast**, then **climate normals** for days 17–30 (Open-Meteo) — real-time, no key |
 | **Events Agent** | Finds holidays + nearby ticketed events that move demand (Nager.Date; optional Ticketmaster) |
-| **Analyst Agent** | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
+| **Analyst Agent** (with `model.ts`: ridge regression trained on your daily sales, backtested holdout MAE, trend + weekday effects + anomaly days) | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
 | **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30, **adapted to each day's weather & events** |
 | **Copywriter Agent** | Writes one on-brand caption per day, through the claims/length guardrail |
 | **Creative Agent** | Renders a branded **poster for every day** (colors, logo, food imagery) |

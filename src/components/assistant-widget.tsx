@@ -46,13 +46,27 @@ export function AssistantWidget({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slug, question }),
       });
-      const data = await res.json();
+      // A broken deployment returns HTML, not JSON — say so instead of hiding it.
+      const raw = await res.text();
+      let data: { answer?: string; error?: string };
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(`The assistant service returned an unexpected response (HTTP ${res.status}). If this is a deployed site, check that DATABASE_URL is configured.`);
+      }
+      if (!res.ok) throw new Error(data.error || `Assistant error (HTTP ${res.status}).`);
       setMsgs((m) => [
         ...m,
-        { role: "assistant", text: data.answer || data.error || "Hmm, try rephrasing that." },
+        { role: "assistant", text: data.answer || "Hmm, try rephrasing that." },
       ]);
-    } catch {
-      setMsgs((m) => [...m, { role: "assistant", text: "Connection hiccup — try again." }]);
+    } catch (err) {
+      setMsgs((m) => [
+        ...m,
+        {
+          role: "assistant",
+          text: err instanceof Error ? `⚠️ ${err.message}` : "⚠️ Could not reach the assistant — check your connection and try again.",
+        },
+      ]);
     } finally {
       setBusy(false);
     }

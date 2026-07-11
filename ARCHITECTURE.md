@@ -87,7 +87,7 @@ flowchart TB
 | Location | `context/geo.ts` | free-text location → lat/lon/country (Open-Meteo geocoding) |
 | Weather | `context/weather.ts` | lat/lon → 30-day `DayWeather` map: live 16-day forecast, then climate normals (`source: "seasonal"`) for the tail |
 | Events | `context/events.ts` | country+coords+dates → holidays (Nager.Date) ∪ ticketed events (Ticketmaster, optional key) |
-| Analyst | `generator.ts:analyzeSales` | `ParsedSalesSummary` → daypart z-scores + item scores |
+| Analyst | `generator.ts:analyzeSales` + `model.ts:trainSalesModel` | daypart z-scores + item scores, **plus** a ridge regression (trend + day-of-week) trained on the uploaded daily series and backtested on a holdout (honest MAE/MAPE); learns trend, strongest/weakest days, anomaly days |
 | Strategy | `generator.ts:buildDayPlan` | all of the above → 30 `RawDay`s (weather/event deltas applied) |
 | Copywriter | `copy.ts` | day plan + voice → caption <80 chars, prohibited-claims guardrail; LLM optional, deterministic fallback |
 | Creative | `creative.ts` | day + brand → poster PNG (photo duotone or brand gradient) in 4 aspect ratios |

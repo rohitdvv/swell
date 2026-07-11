@@ -28,6 +28,7 @@ import {
   type CampaignContext,
 } from "./context";
 import { CAMPAIGN_LEN } from "./generator";
+import { trainSalesModel } from "./model";
 
 export type OrchestrationInput = {
   sales: ParsedSalesSummary;
@@ -38,7 +39,13 @@ export type OrchestrationInput = {
   marketplace?: "demo" | "neutral" | "auto";
   startDate?: string;
   restaurantId?: string;
+  /** Live progress hook — lets the API stream each agent's thinking to the UI. */
+  onEvent?: (e: AgentProgressEvent) => void;
 };
+
+export type AgentProgressEvent =
+  | { type: "agent:start"; agent: AgentEvent["agent"]; role: string }
+  | { type: "agent:done"; agent: AgentEvent["agent"]; detail: string; ms: number };
 
 /**
  * The Swell brain runs as a team of specialised agents coordinated on a
@@ -52,15 +59,27 @@ export async function orchestrate(
   input: OrchestrationInput
 ): Promise<{ campaign: Campaign; days: CampaignDay[]; trace: AgentEvent[] }> {
   const trace: AgentEvent[] = [];
+  // Progress events must never break a run — swallow listener errors.
+  const emit = (e: AgentProgressEvent) => {
+    try {
+      input.onEvent?.(e);
+    } catch {
+      /* listener errors are not our problem */
+    }
+  };
   const track = async <T>(
     agent: AgentEvent["agent"],
     role: string,
     fn: () => Promise<T> | T,
     detail: (r: T) => string
   ): Promise<T> => {
+    emit({ type: "agent:start", agent, role });
     const t0 = performance.now();
     const result = await fn();
-    trace.push({ agent, role, detail: detail(result), ms: Math.round(performance.now() - t0) });
+    const ms = Math.round(performance.now() - t0);
+    const d = detail(result);
+    trace.push({ agent, role, detail: d, ms });
+    emit({ type: "agent:done", agent, detail: d, ms });
     return result;
   };
 
@@ -155,16 +174,19 @@ export async function orchestrate(
     context = buildCampaignContext(location, weather, events, dates);
   }
 
-  // 6 — ANALYST AGENT: z-score dayparts, score items
+  // 6 — ANALYST AGENT: train the forecasting model + z-score dayparts
   const analysis = await track(
     "Analyst Agent",
-    "Z-scores dayparts vs your baseline, scores items by margin & mix",
-    () => analyzeSales(sales),
-    (a) => {
+    "Trains a forecasting model on your history, then z-scores dayparts & scores items",
+    () => Promise.resolve({ a: analyzeSales(sales), m: trainSalesModel(sales) }),
+    ({ a, m }) => {
       const slow = [...a.operating].sort((x, y) => y.slowness - x.slowness)[0];
-      return `${a.operating.length} operating dayparts · slowest ${slow?.daypart} (z ${slow?.z}) · ${a.items.length} items scored`;
+      const modelBit = m
+        ? `model trained on ${m.trainedDays}d (backtest MAE ±$${m.mae}/day) · trend ${m.trendPerWeek >= 0 ? "+" : ""}$${m.trendPerWeek}/wk · `
+        : "";
+      return `${modelBit}slowest ${slow?.daypart} (z ${slow?.z}) · ${a.items.length} items scored`;
     }
-  );
+  ).then((r) => r.a);
 
   // 7 — STRATEGY AGENT: assemble the 30-day plan (weather/event-aware)
   const { rawDays, meta } = await track(
