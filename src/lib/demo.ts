@@ -18,6 +18,20 @@ function isStale(createdAt: string): boolean {
   return ageMs > MAX_AGE_HOURS * 60 * 60 * 1000;
 }
 
+/**
+ * A demo generated during a transient API failure is a visibly broken
+ * showcase: no location, no weather, or (with a key configured) no events.
+ * Treat it as degraded and regenerate after 5 min instead of caching 12h.
+ */
+function isDegraded(c: CampaignWithDays): boolean {
+  const noLocation = !c.context?.located; // demo always passes a location
+  const noEvents =
+    !!process.env.TICKETMASTER_API_KEY && (c.context?.event_days ?? 0) === 0;
+  if (!noLocation && !noEvents) return false;
+  const ageMs = Date.now() - new Date(c.created_at).getTime();
+  return ageMs > 5 * 60 * 1000;
+}
+
 async function generateDemo(): Promise<CampaignWithDays> {
   const { csv, meta } = buildSampleCsv(45);
   const sales = summarize(fileToRows(Buffer.from(csv), "sample.csv"), meta.restaurant_name);
@@ -56,7 +70,7 @@ async function generateDemo(): Promise<CampaignWithDays> {
  */
 export async function getDemoCampaign(): Promise<CampaignWithDays> {
   const existing = await repo.getCampaignBySlug(DEMO_SLUG);
-  if (existing && !isStale(existing.created_at)) return existing;
+  if (existing && !isStale(existing.created_at) && !isDegraded(existing)) return existing;
 
   if (!inFlight) {
     inFlight = generateDemo().finally(() => {

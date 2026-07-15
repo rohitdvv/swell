@@ -96,6 +96,36 @@ export function buildFacts(c: CampaignWithDays): Fact[] {
     });
   }
 
+  // Event-scale ranking: which events are the biggest draws. A stated
+  // heuristic (event type + venue size), not ticket-sales data — so the
+  // assistant can answer "which event is most hyped?" with its basis.
+  {
+    const seen = new Map<string, { name: string; venue: string | null; type: string; date: string; score: number }>();
+    for (const d of c.days) {
+      if (!d.event) continue;
+      const e = d.event;
+      let score = e.type === "sports" ? 3 : e.type === "concert" ? 2 : 1;
+      if (e.venue && /\b(stadium|arena|garden|park|field|center|centre|coliseum)\b/i.test(e.venue)) score += 2;
+      const key = e.name.toLowerCase();
+      if (!seen.has(key) || seen.get(key)!.score < score) {
+        seen.set(key, { name: e.name, venue: e.venue ?? null, type: e.type, date: d.date, score });
+      }
+    }
+    const ranked = [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 5);
+    if (ranked.length) {
+      facts.push({
+        id: "event-scale",
+        text: `Biggest-draw events in this campaign window, ranked by a heuristic (event type + venue size — not ticket sales): ${ranked
+          .map(
+            (e, i) =>
+              `${i + 1}. ${e.name}${e.venue ? ` at ${e.venue}` : ""} (${e.type}, ${e.date})`
+          )
+          .join("; ")}. Major-league games at big stadiums typically pull the largest crowds, so the plan protects margin on those days — demand is already coming.`,
+        tags: ["hype", "hyped", "biggest", "big", "popular", "popularity", "crowd", "draw", "busiest", "major", "best", "event", "events", "rank", "ranking"],
+      });
+    }
+  }
+
   // Learned model facts — trained + backtested on the uploaded daily series.
   const learned = trainSalesModel(s);
   if (learned) {
@@ -300,8 +330,11 @@ Hard rules:
 - Never invent a product feature, screen, tab, button, or capability. Swell does not track actual
   results against the projection, so never suggest the owner "compare actual vs projected" or
   "check back later to see how it performed."
-- If the facts don't cover the question, say plainly that you don't have it, and stop. Do not
-  guess at where the owner might find it.
+- When asked for a ranking or judgment (biggest, best, most popular, most hyped), give the best
+  answer the facts support and NAME the basis (e.g. "by event type and venue size"). Do not refuse
+  just because the facts lack the exact word the owner used.
+- Refuse only when nothing in the facts is relevant — and keep the refusal to ONE short sentence.
+  Never repeat the same refusal paragraph twice.
 - When the question is about accuracy or confidence, give the actual range and confidence level
   from the facts and say which inputs are assumed rather than measured.`;
 

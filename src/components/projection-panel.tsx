@@ -60,22 +60,26 @@ export function MoneyHeadline({ campaign }: { campaign: CampaignWithDays }) {
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <div>
-          <div className="flex items-end gap-6">
-            <Bar
-              label="Last 30 days"
-              value={v.baseline}
-              pct={(v.baseline / Math.max(v.baseline, projectedTotal, 1)) * 100}
-              color="var(--border-strong)"
-            />
-            <Bar
-              label="Projected"
-              value={projectedTotal}
-              pct={(projectedTotal / Math.max(v.baseline, projectedTotal, 1)) * 100}
-              color={brand}
-              badge={`+${formatCompactCurrency(v.expected)}`}
-            />
+        <div className="flex flex-col justify-center">
+          {/* The two numbers, side by side — no chart-junk, no overlap. */}
+          <div className="flex items-baseline gap-4">
+            <div>
+              <div className="text-xs text-fg-subtle">Last 30 days</div>
+              <div className="font-display text-3xl tabular-nums text-fg-muted">
+                {formatCompactCurrency(v.baseline)}
+              </div>
+            </div>
+            <ArrowUpRight className="size-5 shrink-0 self-center text-fg-subtle" />
+            <div>
+              <div className="text-xs text-fg-subtle">Projected next 30</div>
+              <div className="font-display text-4xl tabular-nums" style={{ color: brand }}>
+                {formatCompactCurrency(projectedTotal)}
+              </div>
+            </div>
           </div>
+
+          {/* Runway: baseline flows into the glowing lift segment. */}
+          <Runway baseline={v.baseline} lift={v.expected} brand={brand} />
           <RangeBar low={v.low} expected={v.expected} high={v.high} brand={brand} />
         </div>
 
@@ -112,6 +116,43 @@ export function MoneyHeadline({ campaign }: { campaign: CampaignWithDays }) {
         <span className="text-pretty">{v.confidenceReason}</span>
       </p>
     </Card>
+  );
+}
+
+/**
+ * Baseline flowing into the campaign lift as one horizontal runway.
+ * The lift segment is drawn with a minimum width so a 3% lift is still
+ * visible, and its true share is stated in the chip — never faked silently.
+ */
+function Runway({ baseline, lift, brand }: { baseline: number; lift: number; brand: string }) {
+  const total = Math.max(baseline + lift, 1);
+  const liftShare = Math.max((lift / total) * 100, 6); // visual floor, labeled honestly
+  return (
+    <div className="mt-5">
+      <div className="mb-1.5 flex items-baseline justify-between text-xs">
+        <span className="text-fg-subtle">Your run-rate + campaign lift</span>
+        <span
+          className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+          style={{ background: brand }}
+        >
+          +{formatCompactCurrency(lift)} lift
+        </span>
+      </div>
+      <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-surface-2">
+        <div
+          className="h-full rounded-l-full bg-border-strong/70"
+          style={{ width: `${100 - liftShare}%` }}
+        />
+        <div
+          className="h-full rounded-r-full"
+          style={{
+            width: `${liftShare}%`,
+            background: `linear-gradient(90deg, ${brand}, var(--color-rose-accent))`,
+            boxShadow: `0 0 14px ${brand}80`,
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -227,39 +268,6 @@ export function ValidationCard({ campaign }: { campaign: CampaignWithDays }) {
         {v.bandReason}
       </p>
     </Card>
-  );
-}
-
-function Bar({
-  label,
-  value,
-  pct,
-  color,
-  badge,
-}: {
-  label: string;
-  value: number;
-  pct: number;
-  color: string;
-  badge?: string;
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center">
-      <div className="mb-1 text-sm font-semibold tabular-nums">{formatCompactCurrency(value)}</div>
-      <div className="relative flex h-32 w-full items-end">
-        <div
-          className="w-full rounded-t-lg transition-all"
-          style={{ height: `${Math.max(pct, 4)}%`, background: color }}
-        >
-          {badge && (
-            <span className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full rounded-full bg-mint-500/15 px-2 py-0.5 text-[11px] font-semibold text-mint-600">
-              {badge}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="mt-1.5 text-xs text-fg-subtle">{label}</div>
-    </div>
   );
 }
 

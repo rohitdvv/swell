@@ -201,8 +201,25 @@ export function ForecastChart({
   const firstForecast = series.findIndex((p) => p.kind === "forecast");
   const boundary = firstForecast <= 0 ? n - 1 : firstForecast;
 
-  const path = (pts: { i: number; v: number }[]) =>
-    pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  // Catmull-Rom → cubic bezier: the line reads as a living signal, not a
+  // connect-the-dots polyline.
+  const path = (pts: { i: number; v: number }[]) => {
+    if (pts.length < 2) return "";
+    const P = pts.map((p) => ({ x: x(p.i), y: y(p.v) }));
+    let d = `M${P[0].x.toFixed(1)},${P[0].y.toFixed(1)}`;
+    for (let k = 0; k < P.length - 1; k++) {
+      const p0 = P[k - 1] ?? P[k];
+      const p1 = P[k];
+      const p2 = P[k + 1];
+      const p3 = P[k + 2] ?? p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return d;
+  };
 
   const hist = series.map((p, i) => ({ i, v: p.value })).slice(0, boundary + 1);
   // forecast line continues from the last history point for a seamless join
@@ -214,6 +231,10 @@ export function ForecastChart({
   const histLine = path(hist);
   const histArea = `${histLine} L${x(boundary).toFixed(1)},${(H - padB).toFixed(1)} L${x(0).toFixed(1)},${(H - padB).toFixed(1)} Z`;
   const fcLine = path(fc);
+  const fcArea =
+    fc.length > 1
+      ? `${fcLine} L${x(fc[fc.length - 1].i).toFixed(1)},${(H - padB).toFixed(1)} L${x(fc[0].i).toFixed(1)},${(H - padB).toFixed(1)} Z`
+      : "";
 
   // confidence band (only where low/high exist)
   const banded = series.map((p, i) => ({ i, p })).filter((o) => o.p.high != null && o.p.low != null);
@@ -236,6 +257,17 @@ export function ForecastChart({
           <stop offset="0" stopColor={historyColor} stopOpacity="0.22" />
           <stop offset="1" stopColor={historyColor} stopOpacity="0" />
         </linearGradient>
+        <linearGradient id="fcFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.18" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <filter id="dotGlow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="2.4" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
 
       {/* gridlines + y labels */}
@@ -262,10 +294,30 @@ export function ForecastChart({
       <path d={histLine} fill="none" stroke={historyColor} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
 
       {/* forecast */}
-      <path d={fcLine} fill="none" stroke={color} strokeWidth="2.6" strokeDasharray="1 0" strokeLinejoin="round" strokeLinecap="round" />
+      {fcArea && <path d={fcArea} fill="url(#fcFill)" />}
+      <path
+        d={fcLine}
+        fill="none"
+        stroke={color}
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        filter="url(#dotGlow)"
+      />
       {fcOnly.map((p) => {
         const i = series.indexOf(p);
-        return <circle key={p.date} cx={x(i)} cy={y(p.value)} r="3" fill={color} stroke="var(--surface)" strokeWidth="1.5" />;
+        return (
+          <circle
+            key={p.date}
+            cx={x(i)}
+            cy={y(p.value)}
+            r="3"
+            fill={color}
+            stroke="var(--surface)"
+            strokeWidth="1.5"
+            filter="url(#dotGlow)"
+          />
+        );
       })}
 
       {/* x labels */}

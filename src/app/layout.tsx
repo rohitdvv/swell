@@ -54,10 +54,19 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-full flex flex-col bg-bg text-fg">
-        <ClerkProvider>
-          {children}
-          <Toaster />
-        </ClerkProvider>
+        {/* Keyless deploys still serve every public page — ClerkProvider
+            throws without a publishable key, so it only mounts when set. */}
+        {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+          <ClerkProvider>
+            {children}
+            <Toaster />
+          </ClerkProvider>
+        ) : (
+          <>
+            {children}
+            <Toaster />
+          </>
+        )}
       </body>
     </html>
   );

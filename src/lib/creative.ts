@@ -221,6 +221,24 @@ function creativesDir(): string {
   return "/tmp";
 }
 
+/**
+ * Drop every cached rendition of a day's poster. Called when the day is
+ * edited so the next request composites a fresh image from the new content.
+ */
+export async function invalidateCreative(dayId: string): Promise<void> {
+  const dir = creativesDir();
+  try {
+    const files = await fs.promises.readdir(dir);
+    await Promise.all(
+      files
+        .filter((f) => f.startsWith(`${dayId}-`))
+        .map((f) => fs.promises.unlink(path.join(dir, f)).catch(() => {}))
+    );
+  } catch {
+    /* cache dir unreadable — nothing to invalidate */
+  }
+}
+
 /** Render with a disk cache — the poster for a day is only composited once. */
 export async function getCreativePng(
   day: CampaignDay,

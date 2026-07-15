@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { repo } from "@/lib/db";
 import { projectDay } from "@/lib/project";
 import { generateSingleCopy } from "@/lib/copy";
+import { invalidateCreative } from "@/lib/creative";
 import { DAYPART_WINDOWS, type Daypart } from "@/lib/types";
 import { dowShort } from "@/lib/utils";
 
@@ -46,6 +47,15 @@ export async function PATCH(
     copy = result.copy;
   }
 
+  // Anything that appears ON the poster changed? Drop every cached rendition
+  // and version the URL so browsers can't keep showing the stale image.
+  const posterChanged =
+    nextItem !== day.item ||
+    nextPct !== day.pct_off ||
+    copy !== day.copy ||
+    nextDaypart !== day.daypart;
+  if (posterChanged) await invalidateCreative(id);
+
   const updated = await repo.updateDay(id, {
     daypart: nextDaypart,
     discount_window,
@@ -54,6 +64,7 @@ export async function PATCH(
     projected_redemptions,
     projected_revenue,
     copy,
+    ...(posterChanged ? { creative_url: `/api/creative/${id}.png?v=${Date.now()}` } : {}),
   });
 
   const refreshed = await repo.getCampaignById(day.campaign_id);

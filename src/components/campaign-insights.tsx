@@ -8,6 +8,7 @@ import {
   Utensils,
   TrendingUp,
   TrendingDown,
+  Minus,
   CalendarRange,
   AlertTriangle,
   Sparkles,
@@ -95,18 +96,27 @@ export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays 
 
         {model && (
           <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
-            <Learning
-              icon={
-                model.trendPerWeek >= 0 ? (
-                  <TrendingUp className="size-4" />
-                ) : (
-                  <TrendingDown className="size-4" />
-                )
-              }
-              tone={model.trendPerWeek >= 0 ? "up" : "down"}
-              kpi={`${model.trendPerWeek >= 0 ? "+" : "−"}${formatCompactCurrency(Math.abs(model.trendPerWeek))}/wk`}
-              label={`Revenue is ${model.trendPerWeek >= 0 ? "growing" : "declining"} ${(Math.abs(model.trendPct) * 100).toFixed(1)}% a week`}
-            />
+            {Math.abs(model.trendPct) < 0.005 ? (
+              <Learning
+                icon={<Minus className="size-4" />}
+                tone="neutral"
+                kpi="Flat"
+                label="Revenue is holding steady week to week — no real trend either way"
+              />
+            ) : (
+              <Learning
+                icon={
+                  model.trendPerWeek >= 0 ? (
+                    <TrendingUp className="size-4" />
+                  ) : (
+                    <TrendingDown className="size-4" />
+                  )
+                }
+                tone={model.trendPerWeek >= 0 ? "up" : "down"}
+                kpi={`${model.trendPerWeek >= 0 ? "+" : "−"}${formatCompactCurrency(Math.abs(model.trendPerWeek))}/wk`}
+                label={`Revenue is ${model.trendPerWeek >= 0 ? "growing" : "declining"} ${(Math.abs(model.trendPct) * 100).toFixed(1)}% a week`}
+              />
+            )}
             <Learning
               icon={<CalendarRange className="size-4" />}
               tone="up"
@@ -125,6 +135,43 @@ export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays 
               kpi={`±${(model.mape * 100).toFixed(1)}%`}
               label={`Backtest error on the last ${model.holdoutDays} days it never saw — how honest the forecast is`}
             />
+          </div>
+        )}
+
+        {/* Every weekday's fitted effect, as one glanceable rhythm strip. */}
+        {model && (
+          <div className="border-t border-border px-5 py-4">
+            <div className="mb-3 text-xs font-semibold text-fg-muted">
+              Your week&apos;s rhythm — each day vs an average day
+            </div>
+            <div className="flex items-end gap-2">
+              {DOW_ORDER.map((d) => {
+                const eff = model.dowEffect[d];
+                const maxEff = Math.max(...DOW_ORDER.map((x) => Math.abs(model.dowEffect[x])), 1);
+                const h = 8 + (Math.abs(eff) / maxEff) * 40;
+                const up = eff >= 0;
+                return (
+                  <div key={d} className="flex flex-1 flex-col items-center gap-1.5">
+                    <span
+                      className={`text-[10px] font-medium tabular-nums ${up ? "text-mint-600" : "text-rose-600"}`}
+                    >
+                      {up ? "+" : "−"}
+                      {formatCompactCurrency(Math.abs(eff))}
+                    </span>
+                    <div
+                      className="w-full rounded-md transition-all"
+                      style={{
+                        height: `${h}px`,
+                        background: up ? "var(--color-mint-500)" : "var(--color-rose-accent)",
+                        opacity: 0.25 + (Math.abs(eff) / maxEff) * 0.75,
+                      }}
+                      title={`${d}: ${up ? "+" : "−"}${formatCompactCurrency(Math.abs(eff))} vs average`}
+                    />
+                    <span className="text-[10px] text-fg-subtle">{DOW_SHORT[d]}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

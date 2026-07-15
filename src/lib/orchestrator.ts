@@ -138,7 +138,12 @@ export async function orchestrate(
     "Location Agent",
     "Geocodes the venue to coordinates for live conditions",
     () => (input.location ? geocode(input.location) : Promise.resolve(null)),
-    (l) => (l ? `${[l.name, l.admin1].filter(Boolean).join(", ")} (${l.lat.toFixed(2)}, ${l.lon.toFixed(2)})` : "no location provided — skipping live context")
+    (l) =>
+      l
+        ? `${[l.name, l.admin1].filter(Boolean).join(", ")} (${l.lat.toFixed(2)}, ${l.lon.toFixed(2)})`
+        : input.location
+          ? `could not geocode “${input.location}” — continuing without live context`
+          : "no location provided — skipping live context"
   );
 
   // 4 + 5 — WEATHER + EVENTS AGENTS (parallel, real-time)

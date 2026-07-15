@@ -707,10 +707,42 @@ function EditModal({
 }
 
 const CHANNELS = [
-  { key: "google", name: "Google Ads", color: "#4285F4", note: "Responsive Search + Display", formats: ["1.91x1", "1x1"] },
-  { key: "meta", name: "Meta / Facebook", color: "#1877F2", note: "Feed + Reels", formats: ["1x1", "4x5", "1.91x1"] },
-  { key: "instagram", name: "Instagram", color: "#E1306C", note: "Feed + Stories", formats: ["1x1", "4x5", "9x16"] },
-  { key: "tiktok", name: "TikTok", color: "#111111", note: "In-feed", formats: ["9x16"] },
+  {
+    key: "google",
+    name: "Google Ads",
+    color: "#4285F4",
+    note: "Responsive Search + Display",
+    formats: ["1.91x1", "1x1"],
+    managerUrl: "https://ads.google.com/aw/campaigns/new",
+    managerLabel: "Open Google Ads",
+  },
+  {
+    key: "meta",
+    name: "Meta / Facebook",
+    color: "#1877F2",
+    note: "Feed + Reels",
+    formats: ["1x1", "4x5", "1.91x1"],
+    managerUrl: "https://business.facebook.com/adsmanager/manage/campaigns",
+    managerLabel: "Open Ads Manager",
+  },
+  {
+    key: "instagram",
+    name: "Instagram",
+    color: "#E1306C",
+    note: "Feed + Stories",
+    formats: ["1x1", "4x5", "9x16"],
+    managerUrl: "https://business.facebook.com/adsmanager/manage/campaigns",
+    managerLabel: "Open Ads Manager",
+  },
+  {
+    key: "tiktok",
+    name: "TikTok",
+    color: "#111111",
+    note: "In-feed",
+    formats: ["9x16"],
+    managerUrl: "https://ads.tiktok.com/i18n/creation",
+    managerLabel: "Open TikTok Ads",
+  },
 ];
 
 const FORMAT_LABEL: Record<string, string> = {
@@ -752,9 +784,8 @@ function DistributionPanel({
     125
   );
 
-  function connect(channel: string) {
-    toast(`${channel}: connect your ad account (OAuth) to auto-publish — pipeline is wired.`, "info");
-  }
+  const [publishing, setPublishing] = React.useState<(typeof CHANNELS)[number] | null>(null);
+
   function copyText(t: string) {
     navigator.clipboard.writeText(t);
     toast("Copied.", "success");
@@ -806,8 +837,8 @@ function DistributionPanel({
                 </a>
               ))}
             </div>
-            <Button variant="secondary" size="sm" className="w-full" onClick={() => connect(ch.name)}>
-              <Plug className="size-3.5" /> Connect &amp; auto-publish
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => setPublishing(ch)}>
+              <Plug className="size-3.5" /> Publish to {ch.name}
             </Button>
           </Card>
         ))}
@@ -826,9 +857,79 @@ function DistributionPanel({
       </Card>
 
       <p className="px-1 text-center text-xs text-fg-subtle text-pretty">
-        Live auto-posting to Google &amp; Meta activates once you connect your ad account — the
-        creatives, targeting radius and daily budget split are prepared per day.
+        One-click OAuth auto-posting requires your own Meta / Google ad accounts — until then,
+        &quot;Publish&quot; walks you through a 2-minute manual upload with everything pre-made.
       </p>
+
+      {/* Publish workflow — everything needed to go live on this channel NOW. */}
+      <Modal open={!!publishing} onClose={() => setPublishing(null)} title={publishing ? `Publish to ${publishing.name}` : ""}>
+        {publishing && (
+          <div className="space-y-4">
+            <PublishStep n={1} title="Download the creatives (pre-sized)">
+              <div className="flex flex-wrap gap-1.5">
+                {publishing.formats.map((f) => (
+                  <a
+                    key={f}
+                    href={`${hero.creative_url}${hero.creative_url.includes("?") ? "&" : "?"}ar=${f}`}
+                    download={`${campaign.restaurant_slug}-${publishing.key}-${f}.png`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-fg-muted transition hover:text-fg"
+                  >
+                    <Download className="size-3" /> {FORMAT_LABEL[f]}
+                  </a>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-fg-subtle">
+                Downloads today&apos;s hero creative — every other day&apos;s poster is on the Posters tab.
+              </p>
+            </PublishStep>
+
+            <PublishStep n={2} title="Copy the ad text (already within limits)">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  copyText(
+                    publishing.key === "google"
+                      ? [...googleHeadlines, ...googleDescriptions].join("\n")
+                      : metaPrimary
+                  )
+                }
+              >
+                <Copy className="size-3.5" /> Copy {publishing.key === "google" ? "headlines + descriptions" : "primary text"}
+              </Button>
+            </PublishStep>
+
+            <PublishStep n={3} title={`Upload in ${publishing.name}`}>
+              <a href={publishing.managerUrl} target="_blank" rel="noreferrer">
+                <Button size="sm">
+                  <Megaphone className="size-3.5" /> {publishing.managerLabel} →
+                </Button>
+              </a>
+            </PublishStep>
+
+            <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] text-fg-subtle text-pretty">
+              <span className="font-medium text-fg-muted">Why no one-click connect yet? </span>
+              Auto-publishing through the {publishing.name} API requires your own approved developer
+              app and ad account — credentials only you can create. The pipeline on Swell&apos;s side
+              is built; this guided upload is the honest bridge until you connect them.
+            </p>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function PublishStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ember-gradient text-xs font-bold text-white">
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1.5 text-sm font-medium">{title}</div>
+        {children}
+      </div>
     </div>
   );
 }
