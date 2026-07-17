@@ -4,20 +4,14 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import {
   Sparkles,
-  TrendingUp,
-  Ticket,
   Pencil,
   RefreshCw,
   Check,
   Zap,
   Store,
   Users,
-  Clock,
   Info,
   Download,
-  Cpu,
-  CloudSun,
-  MapPin,
   Megaphone,
   Copy,
   Plug,
@@ -30,8 +24,6 @@ import type {
   CampaignWithDays,
   CampaignDay,
   Daypart,
-  AgentEvent,
-  ContextSummary,
   DayWeather,
 } from "@/lib/types";
 import { DAYPARTS, DAYPART_WINDOWS } from "@/lib/types";
@@ -39,19 +31,30 @@ import {
   formatCompactCurrency,
   formatNumber,
   dowShort,
+  dowFull,
   formatShortDate,
   parseLocalDate,
   cn,
 } from "@/lib/utils";
-import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner, Segmented } from "@/components/ui";
+import Link from "next/link";
+import { Newsreader, Schibsted_Grotesk, Spline_Sans_Mono } from "next/font/google";
+import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
 import { CampaignIntelligence } from "@/components/campaign-insights";
-import { MoneyHeadline } from "@/components/projection-panel";
+import { validateProjection } from "@/lib/validate";
 import { AssistantWidget } from "@/components/assistant-widget";
 import { floorScript } from "@/lib/calendar";
 
-const DOW_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// ---- Swell OS typography (from the Claude Design comp) -------
+const osSerif = Newsreader({ subsets: ["latin"], style: ["normal", "italic"], variable: "--font-os-serif" });
+const osSans = Schibsted_Grotesk({ subsets: ["latin"], variable: "--font-os-sans" });
+const osMono = Spline_Sans_Mono({ subsets: ["latin"], variable: "--font-os-mono" });
+
+/** Palette + fonts for the artifact skin — also passed to portalled modals. */
+function osClass(extra?: string) {
+  return cn("swell-os", osSerif.variable, osSans.variable, osMono.variable, extra);
+}
 
 /** Never let a seasonal estimate read as if we know the weather that day. */
 function weatherTitle(w: DayWeather): string {
@@ -61,13 +64,6 @@ function weatherTitle(w: DayWeather): string {
     : `${base} — live forecast, ${w.rainProb}% chance of rain`;
 }
 
-const DAYPART_TONE: Record<Daypart, string> = {
-  Breakfast: "#f59e0b",
-  Lunch: "#10b981",
-  Afternoon: "#3b82f6",
-  Dinner: "#8b5cf6",
-  "Late-Night": "#ec4899",
-};
 
 export function CampaignBoard({
   initial,
@@ -84,20 +80,21 @@ export function CampaignBoard({
   const [paused, setPaused] = React.useState(initial.paused);
   const [editing, setEditing] = React.useState<CampaignDay | null>(null);
   const [activating, setActivating] = React.useState(false);
+  const [selIdx, setSelIdx] = React.useState(0);
   const [view, setView] = React.useState<
     "calendar" | "intelligence" | "posters" | "distribution"
   >("calendar");
 
   const brand = campaign.brand;
-  const brandColor = brand?.primary_color || "#f75410";
+  const brandColor = brand?.primary_color || "#C24A22";
 
-  const totalRev = days.reduce((a, d) => a + d.projected_revenue, 0);
-  const totalRed = days.reduce((a, d) => a + d.projected_redemptions, 0);
-  const editedCount = days.filter((d) => d.edited).length;
-  const liftPct =
-    campaign.baseline_revenue > 0
-      ? (totalRev / campaign.baseline_revenue) * 100
-      : 0;
+  const v = React.useMemo(() => validateProjection({ ...campaign, days }), [campaign, days]);
+  const checksPassed = v.checks.filter((c) => c.ok).length;
+  const projectedTotal = v.baseline + v.expected;
+  const maxBar = Math.max(v.baseline, projectedTotal, 1);
+  const ctx = campaign.context;
+  const s = campaign.sales_summary;
+  const sel = days[Math.min(selIdx, days.length - 1)] ?? null;
 
   function applyDayUpdate(updated: CampaignDay) {
     setDays((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
@@ -126,229 +123,189 @@ export function CampaignBoard({
     }
   }
 
-  // calendar leading offset
-  const startDow = parseLocalDate(campaign.start_date).getDay();
+  const TABS = [
+    { key: "calendar", label: "Calendar" },
+    { key: "intelligence", label: "Intelligence" },
+    { key: "posters", label: "Posters" },
+    { key: "distribution", label: "Distribution" },
+  ] as const;
 
   return (
-    <div
-      className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
-      style={{ ["--brand" as string]: brandColor }}
-    >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-        {/* ---------- main ---------- */}
-        <div className="order-2 lg:order-1">
-          {/* the money question, answered before anything else */}
-          <MoneyHeadline campaign={{ ...campaign, days }} />
-
-          {/* strategy notes */}
-          <Card className="mb-5 overflow-hidden">
-            <div className="flex items-center gap-2 border-b border-border px-5 py-3.5">
-              <Sparkles className="size-4" style={{ color: brandColor }} />
-              <span className="text-sm font-semibold">How the brain built this</span>
-              <Badge tone="ember" className="ml-auto">
-                {campaign.marketplace?.simulated
-                  ? "Modeled demand"
-                  : campaign.marketplace?.in_marketplace
-                    ? "Two-sided read"
-                    : "Sales-history read"}
-              </Badge>
-            </div>
-            <ul className="divide-y divide-border">
-              {campaign.strategy_notes.map((n, i) => (
-                <li key={i} className="flex gap-3 px-5 py-3 text-sm text-fg-muted">
-                  <span
-                    className="mt-1.5 size-1.5 shrink-0 rounded-full"
-                    style={{ background: brandColor }}
-                  />
-                  <span className="text-pretty">{n}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          {/* view toolbar */}
-          <div className="mb-4 flex items-center justify-between">
-            <Segmented
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "calendar", label: "Calendar" },
-                { value: "intelligence", label: "Intelligence" },
-                { value: "posters", label: "Posters" },
-                { value: "distribution", label: "Distribution" },
-              ]}
+    <div className={osClass("min-h-screen")} style={{ ["--brand" as string]: brandColor }}>
+      {/* ══ OS header ══ */}
+      <header
+        className="sticky top-0 z-40 flex h-[60px] items-center gap-4 border-b px-5 sm:px-10"
+        style={{
+          borderColor: "var(--os-line)",
+          background: "rgba(10,12,11,0.85)",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        <Link href="/" className="flex items-baseline gap-2">
+          <span className="font-display text-xl">Swell</span>
+          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: "var(--os-amber)" }}>
+            OS
+          </span>
+        </Link>
+        <span className="os-label hidden md:block">
+          /C/{campaign.restaurant_slug.toUpperCase()} · PUBLIC ARTIFACT
+        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <span
+            className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.1em]"
+            style={{ color: paused ? "var(--os-amber)" : "var(--os-mint)" }}
+          >
+            <span
+              className={cn("size-1.5 rounded-full", !paused && "os-pulse")}
+              style={{ background: paused ? "var(--os-amber)" : "var(--os-mint)" }}
             />
-            <span className="hidden text-xs text-fg-subtle sm:block">{days.length} auto-branded posters</span>
-          </div>
-
-          {view === "distribution" ? (
-            <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
-          ) : view === "intelligence" ? (
-            <CampaignIntelligence campaign={{ ...campaign, days }} />
-          ) : view === "calendar" ? (
-            <>
-              {/* calendar — desktop */}
-              <Card className="hidden overflow-hidden md:block">
-                <div className="grid grid-cols-7 border-b border-border bg-surface-2">
-                  {DOW_HEADERS.map((d) => (
-                    <div
-                      key={d}
-                      className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
-                    >
-                      {d}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7">
-                  {Array.from({ length: startDow }).map((_, i) => (
-                    <div key={`blank-${i}`} className="min-h-[128px] border-b border-r border-border bg-surface-2/40" />
-                  ))}
-                  {days.map((d, i) => (
-                    <DayCell
-                      key={d.id}
-                      day={d}
-                      index={i}
-                      brandColor={brandColor}
-                      editable={editable}
-                      onClick={() => setEditing(d)}
-                    />
-                  ))}
-                </div>
-              </Card>
-
-              {/* list — mobile */}
-              <div className="space-y-2.5 md:hidden">
-                {days.map((d) => (
-                  <DayListItem
-                    key={d.id}
-                    day={d}
-                    brandColor={brandColor}
-                    editable={editable}
-                    onClick={() => setEditing(d)}
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <PostersGrid days={days} editable={editable} onOpen={setEditing} />
+            {paused ? "PAUSED" : "LIVE"}
+          </span>
+          {showActivate && (
+            <button
+              onClick={activate}
+              disabled={activating}
+              className="flex h-[34px] items-center gap-1.5 rounded px-4 text-[12.5px] font-semibold transition hover:brightness-110 disabled:opacity-60"
+              style={{ background: "var(--os-amber)", color: "#0A0C0B" }}
+            >
+              {activating ? (
+                <Spinner className="size-3.5" />
+              ) : paused ? (
+                <Zap className="size-3.5" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              {paused ? "Activate campaign" : "Campaign is live"}
+            </button>
           )}
         </div>
+      </header>
 
-        {/* ---------- sidebar ---------- */}
-        <div className="order-1 lg:order-2">
-          <div className="lg:sticky lg:top-6 space-y-4">
-            <Card className="overflow-hidden">
+      {/* ══ Masthead ══ */}
+      <section className="relative overflow-hidden border-b" style={{ borderColor: "var(--os-line)" }}>
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ background: `radial-gradient(70% 80% at 85% 0%, ${brandColor}26 0%, transparent 55%)` }}
+        />
+        <div className="relative mx-auto grid max-w-[1180px] items-end gap-8 px-5 pb-8 pt-12 sm:px-10 lg:grid-cols-[1fr_380px] lg:gap-12">
+          <div>
+            <div className="flex items-center gap-3">
               <div
-                className="px-5 py-5 text-white"
-                style={{
-                  background: `linear-gradient(135deg, ${brandColor}, ${shade(brandColor, -40)})`,
-                }}
+                className="flex size-11 shrink-0 items-center justify-center rounded-lg font-display text-2xl"
+                style={{ background: brandColor, color: "#F4F1E8" }}
               >
-                <div className="flex items-center gap-2 text-xs font-medium opacity-90">
-                  <TrendingUp className="size-3.5" />
-                  Projected incremental revenue
-                </div>
-                <div className="mt-1 font-display text-5xl leading-none">
-                  {formatCompactCurrency(totalRev)}
-                </div>
-                <div className="mt-2 text-xs opacity-80">
-                  ≈ {liftPct.toFixed(1)}% lift over your {formatCompactCurrency(campaign.baseline_revenue)} run-rate
-                </div>
+                {(campaign.restaurant_name || "S")[0]}
               </div>
-              <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
-                <Stat icon={<Ticket className="size-4" />} label="Redemptions" value={formatNumber(totalRed)} />
-                <Stat icon={<Zap className="size-4" />} label="Promo days" value={`${days.length}`} />
+              <div>
+                <div className="font-mono text-[10px] tracking-[0.2em]" style={{ color: "var(--os-amber)" }}>
+                  30-DAY CAMPAIGN · {campaign.month.toUpperCase()}
+                </div>
+                <h1 className="mt-0.5 font-display text-4xl leading-none tracking-tight sm:text-[44px]">
+                  {campaign.restaurant_name}
+                </h1>
               </div>
-            </Card>
+            </div>
+            <p className="mt-4 max-w-[540px] text-[14.5px] leading-relaxed text-fg-muted text-pretty">
+              {[ctx?.location_label || campaign.location, `Generated ${formatShortDate(campaign.created_at.slice(0, 10))}`]
+                .filter(Boolean)
+                .join(" · ")}{" "}
+              by the 10-agent brain from {s.date_range?.days ?? 30} days of sales
+              {ctx?.located
+                ? `, a live ${ctx.forecast_days}-day forecast, and ${ctx.event_days} event day${ctx.event_days === 1 ? "" : "s"}`
+                : ""}
+              . Every number below carries its confidence.
+            </p>
+          </div>
 
-            {/* activate */}
-            {showActivate && (
-              <Card className="p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm font-medium">Status</span>
-                  <Badge tone={paused ? "muted" : "mint"}>
-                    <span className={cn("size-1.5 rounded-full", paused ? "bg-fg-subtle" : "bg-mint-500 animate-pulse")} />
-                    {paused ? "Paused" : "Live"}
-                  </Badge>
-                </div>
-                <Button
-                  onClick={activate}
-                  loading={activating}
-                  variant={paused ? "primary" : "secondary"}
-                  className="w-full"
-                  size="lg"
-                >
-                  {!activating && (paused ? <Zap className="size-4" /> : <Check className="size-4" />)}
-                  {paused ? "Activate campaign" : "Campaign is live"}
-                </Button>
-                {editedCount > 0 && (
-                  <p className="mt-2.5 text-center text-xs text-fg-subtle">
-                    {editedCount} card{editedCount === 1 ? "" : "s"} hand-tuned
-                  </p>
-                )}
-              </Card>
-            )}
-
-            {/* marketplace signal */}
-            {campaign.marketplace && (
-              <Card className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Store className="size-4" style={{ color: brandColor }} />
-                  <span className="text-sm font-semibold">Marketplace signal</span>
-                  {campaign.marketplace.simulated && (
-                    <Badge tone="ember" className="ml-auto">simulated</Badge>
-                  )}
-                </div>
-                <SignalRow
-                  label="Organic demand"
-                  value={`${Math.round((campaign.marketplace.organic_demand_index || 0) * 100)}/100`}
-                />
-                {campaign.marketplace.in_marketplace ? (
-                  <>
-                    <SignalRow
-                      label={campaign.marketplace.simulated ? "Est. saves" : "In-app saves"}
-                      value={`${campaign.marketplace.simulated ? "~" : ""}${formatNumber(campaign.marketplace.saves)}`}
-                    />
-                    <SignalRow
-                      label={campaign.marketplace.simulated ? "Est. redemptions" : "Past redemptions"}
-                      value={`${campaign.marketplace.simulated ? "~" : ""}${formatNumber(campaign.marketplace.past_redemptions)}`}
-                    />
-                    <SignalRow
-                      label="Demand lift"
-                      value={`×${campaign.marketplace.lift_factor.toFixed(2)}`}
-                    />
-                    <div className="mt-3 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
-                      <Users className="size-3.5 shrink-0" />
-                      {campaign.marketplace.neighborhood.dominant_age_band} · median basket $
-                      {campaign.marketplace.neighborhood.median_basket} · {campaign.marketplace.neighborhood.consumer_density} density (1mi)
-                    </div>
-                    {campaign.marketplace.simulated && (
-                      <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
-                        <Info className="size-3.5 shrink-0 mt-0.5" />
-                        Modeled preview from neighborhood + sales. Live figures populate once the Swell
-                        consumer app is active in this market.
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
-                    <Info className="size-3.5 shrink-0 mt-0.5" />
-                    Not yet in the Swell consumer marketplace — plan leans on sales history.
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {campaign.context?.located && (
-              <RealtimeContext context={campaign.context} brandColor={brandColor} />
-            )}
-
-            <OperatorTools campaign={{ ...campaign, days }} brandColor={brandColor} />
-            {/* The agent run is shown LIVE during generation and stored on the
-                run log — a static replay card here was noise. */}
+          {/* the money question, first */}
+          <div
+            className="rounded-lg border p-5 sm:px-6"
+            style={{ borderColor: "var(--border-strong)", background: "var(--surface)" }}
+          >
+            <div className="os-label">The money question, first</div>
+            <div className="mt-2 flex flex-wrap items-baseline gap-3">
+              <span className="font-display text-[42px] leading-none" style={{ color: "var(--os-mint)" }}>
+                +{formatCompactCurrency(v.expected)}
+              </span>
+              <span className="font-mono text-[11px] text-fg-muted">
+                {formatCompactCurrency(v.low)}–{formatCompactCurrency(v.high)}
+              </span>
+            </div>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <span className="os-chip" style={{ background: "rgba(180,118,42,0.18)", color: "var(--os-amber)" }}>
+                Confidence: {v.confidence}
+              </span>
+              <span className="os-chip" style={{ background: "rgba(127,209,174,0.12)", color: "var(--os-mint)" }}>
+                {checksPassed}/{v.checks.length} checks
+              </span>
+            </div>
+            <div className="mt-3.5 flex gap-3.5 border-t pt-3" style={{ borderColor: "var(--os-line)" }}>
+              <MoneyBar label="Last 30 days" value={v.baseline} max={maxBar} mint={false} />
+              <MoneyBar label="Projected next 30" value={projectedTotal} max={maxBar} mint />
+            </div>
           </div>
         </div>
-      </div>
+
+        {/* tabs */}
+        <div className="mx-auto flex max-w-[1180px] gap-1 overflow-x-auto px-5 sm:px-10">
+          {TABS.map((tb) => (
+            <button
+              key={tb.key}
+              onClick={() => setView(tb.key)}
+              className="whitespace-nowrap px-5 py-3 text-[13.5px] font-semibold transition hover:text-fg"
+              style={{
+                color: view === tb.key ? "var(--fg)" : "var(--fg-subtle)",
+                borderBottom: `2px solid ${view === tb.key ? "var(--os-amber)" : "transparent"}`,
+              }}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* ══ Tab content ══ */}
+      <main className="mx-auto max-w-[1180px] px-5 pb-20 pt-8 sm:px-10">
+        {view === "calendar" && (
+          <div className="grid items-start gap-7 lg:grid-cols-[1fr_320px]">
+            <div
+              className="grid gap-2.5"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
+            >
+              {days.map((d, i) => (
+                <OsDayCard key={d.id} day={d} active={i === selIdx} onSelect={() => setSelIdx(i)} />
+              ))}
+            </div>
+            <div className="flex flex-col gap-5 lg:sticky lg:top-[76px]">
+              <SelectedRail day={sel} editable={editable} onEdit={() => sel && setEditing(sel)} />
+              <TraceCard campaign={campaign} />
+              <OperatorTools campaign={{ ...campaign, days }} brandColor={brandColor} />
+              <MarketplaceCard campaign={campaign} brandColor={brandColor} />
+            </div>
+          </div>
+        )}
+
+        {view === "intelligence" && <CampaignIntelligence campaign={{ ...campaign, days }} />}
+
+        {view === "posters" && (
+          <div>
+            <div className="mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="font-display text-2xl">Thirty posters. All unmistakably you.</span>
+              <span className="os-label">
+                Duotone {brandColor} · logo · caption · click to {editable ? "edit" : "view"}
+              </span>
+            </div>
+            <PostersGrid days={days} editable={editable} onOpen={setEditing} />
+            <div className="os-label mt-4">
+              Each re-cut to 1:1 · 4:5 · 9:16 · 1.91:1 in the Distribution tab
+            </div>
+          </div>
+        )}
+
+        {view === "distribution" && (
+          <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
+        )}
+      </main>
 
       <EditModal
         day={editing}
@@ -367,12 +324,230 @@ export function CampaignBoard({
   );
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+/** Masthead mini-bar: 30-day totals drawn to scale. */
+function MoneyBar({ label, value, max, mint }: { label: string; value: number; max: number; mint: boolean }) {
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-1.5 text-fg-subtle">{icon}<span className="text-xs">{label}</span></div>
-      <div className="mt-0.5 text-xl font-semibold tabular-nums">{value}</div>
+    <div className="min-w-0 flex-1">
+      <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-fg-subtle">{label}</div>
+      <div className="mt-0.5 font-display text-xl" style={mint ? { color: "var(--os-mint)" } : undefined}>
+        {formatCompactCurrency(value)}
+      </div>
+      <div className="mt-1.5 h-[5px] rounded-[3px]" style={{ background: "rgba(237,232,220,0.12)" }}>
+        <div
+          className="h-full rounded-[3px]"
+          style={{
+            width: `${Math.max((value / max) * 100, 4)}%`,
+            background: mint ? "var(--os-mint)" : "rgba(237,232,220,0.28)",
+          }}
+        />
+      </div>
     </div>
+  );
+}
+
+function shortWindow(win: string): string {
+  return win.replace(/:00/g, "");
+}
+
+/** One compact day card in the artifact calendar. */
+function OsDayCard({
+  day,
+  active,
+  onSelect,
+}: {
+  day: CampaignDay;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const w = day.weather;
+  const ev = day.event;
+  const deep = day.pct_off >= 25;
+  const icon = ev ? (ev.type === "holiday" ? "🎉" : "🎫") : (w?.icon ?? "·");
+  return (
+    <button
+      onClick={onSelect}
+      className="min-h-[108px] rounded-md border p-3 pb-3.5 text-left transition"
+      style={{
+        borderColor: active ? "var(--os-amber)" : ev ? "rgba(127,209,174,0.3)" : "var(--border)",
+        background: active ? "rgba(232,163,61,0.07)" : "var(--surface)",
+      }}
+    >
+      <div className="flex items-baseline justify-between">
+        <span className="font-mono text-[9.5px] text-fg-subtle">
+          {dowShort(day.date).toUpperCase()} {parseLocalDate(day.date).getDate()}
+        </span>
+        <span className="text-xs" title={w ? weatherTitle(w) : undefined}>{icon}</span>
+      </div>
+      <div className="mt-2 line-clamp-2 text-[12.5px] font-semibold leading-tight">{day.item}</div>
+      <div
+        className="mt-1 font-mono text-[10px]"
+        style={{ color: ev ? "var(--os-mint)" : deep ? "var(--os-amber)" : "var(--fg-muted)" }}
+      >
+        -{day.pct_off}% · {shortWindow(day.discount_window)}
+      </div>
+      <div
+        className="mt-1 truncate font-mono text-[9px] uppercase text-fg-subtle"
+        title={ev ? ev.name : w ? weatherTitle(w) : undefined}
+      >
+        {ev ? ev.name : w ? `${w.tempF}° ${w.condition}${w.source === "seasonal" ? " est." : ""}` : "—"}
+      </div>
+    </button>
+  );
+}
+
+/** The right-rail detail for the selected day — the comp's amber card. */
+function SelectedRail({
+  day,
+  editable,
+  onEdit,
+}: {
+  day: CampaignDay | null;
+  editable: boolean;
+  onEdit: () => void;
+}) {
+  if (!day) return null;
+  const w = day.weather;
+  const deep = day.pct_off >= 25;
+  return (
+    <div
+      className="rounded-lg border p-5"
+      style={{ borderColor: "rgba(232,163,61,0.4)", background: "var(--surface)" }}
+    >
+      <div className="os-label" style={{ color: "var(--os-amber)" }}>
+        Selected — {dowFull(day.date)} {parseLocalDate(day.date).getDate()}
+      </div>
+      <div className="mt-2.5 font-display text-[26px] leading-tight">{day.item}</div>
+      <div
+        className="mt-1.5 font-mono text-[11.5px]"
+        style={{ color: deep ? "var(--os-amber)" : "var(--fg-muted)" }}
+      >
+        -{day.pct_off}% · {shortWindow(day.discount_window)}
+      </div>
+      <p className="mt-3 font-display text-[13.5px] italic leading-relaxed text-fg-muted">
+        “{day.copy}”
+      </p>
+      <div
+        className="mt-3.5 flex flex-col gap-1.5 border-t pt-3 font-mono text-[10.5px] uppercase text-fg-muted"
+        style={{ borderColor: "var(--os-line)" }}
+      >
+        {w && (
+          <span title={weatherTitle(w)}>
+            {w.icon} {w.tempF}° {w.condition}
+            {w.source === "seasonal" ? " · seasonal est." : ""}
+          </span>
+        )}
+        {day.event && (
+          <span style={{ color: "var(--os-mint)" }}>
+            {day.event.type === "holiday" ? "🎉" : "🎫"} {day.event.name}
+            {day.event.venue ? ` @ ${day.event.venue}` : ""}
+          </span>
+        )}
+        {day.expected_covers > 0 && (
+          <span>Prep hint: {formatNumber(day.expected_covers)} expected covers</span>
+        )}
+        {(day.context_note || day.rationale) && (
+          <span className="normal-case text-fg-subtle">
+            WHY: {day.context_note || day.rationale}
+          </span>
+        )}
+      </div>
+      {editable && (
+        <Button variant="secondary" size="sm" className="mt-4 w-full" onClick={onEdit}>
+          <Pencil className="size-3.5" /> Edit this day
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Live conditions + agent trace, as terse mono checkmarks (per the comp). */
+function TraceCard({ campaign }: { campaign: CampaignWithDays }) {
+  const ctx = campaign.context;
+  const lines: string[] = [];
+  if (ctx?.located) {
+    lines.push(`location: ${ctx.location_label}`);
+    lines.push(
+      `weather: ${ctx.forecast_days}-day live forecast${ctx.seasonal_days ? ` · normals beyond` : ""} · ${ctx.rain_days} wet`
+    );
+    lines.push(`events: ${ctx.event_days} event day${ctx.event_days === 1 ? "" : "s"} in window`);
+  }
+  for (const t of (campaign.agent_trace ?? []).filter((t) =>
+    ["Analyst Agent", "Copywriter Agent", "Creative Agent"].includes(t.agent)
+  )) {
+    lines.push(`${t.agent.replace(" Agent", "").toLowerCase()}: ${clampStr(t.detail, 56)}`);
+  }
+  if (lines.length === 0) return null;
+  return (
+    <div
+      className="rounded-lg border p-5"
+      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+    >
+      <div className="os-label">Live conditions · agent trace</div>
+      <div className="mt-1 flex flex-col">
+        {lines.map((l, i) => (
+          <div key={i} className="mt-2.5 flex gap-2.5 font-mono text-[10.5px] leading-relaxed">
+            <span style={{ color: "var(--os-mint)" }}>✓</span>
+            <span className="min-w-0 text-fg-muted">{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Marketplace demand signal — honestly tagged when simulated. */
+function MarketplaceCard({
+  campaign,
+  brandColor,
+}: {
+  campaign: CampaignWithDays;
+  brandColor: string;
+}) {
+  if (!campaign.marketplace) return null;
+  const m = campaign.marketplace;
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Store className="size-4" style={{ color: brandColor }} />
+        <span className="text-sm font-semibold">Marketplace signal</span>
+        {m.simulated && (
+          <Badge tone="ember" className="ml-auto">
+            simulated
+          </Badge>
+        )}
+      </div>
+      <SignalRow label="Organic demand" value={`${Math.round((m.organic_demand_index || 0) * 100)}/100`} />
+      {m.in_marketplace ? (
+        <>
+          <SignalRow
+            label={m.simulated ? "Est. saves" : "In-app saves"}
+            value={`${m.simulated ? "~" : ""}${formatNumber(m.saves)}`}
+          />
+          <SignalRow
+            label={m.simulated ? "Est. redemptions" : "Past redemptions"}
+            value={`${m.simulated ? "~" : ""}${formatNumber(m.past_redemptions)}`}
+          />
+          <SignalRow label="Demand lift" value={`×${m.lift_factor.toFixed(2)}`} />
+          <div className="mt-3 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+            <Users className="size-3.5 shrink-0" />
+            {m.neighborhood.dominant_age_band} · median basket ${m.neighborhood.median_basket} ·{" "}
+            {m.neighborhood.consumer_density} density (1mi)
+          </div>
+          {m.simulated && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
+              <Info className="size-3.5 shrink-0 mt-0.5" />
+              Modeled preview from neighborhood + sales. Live figures populate once the Swell
+              consumer app is active in this market.
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="mt-2 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+          <Info className="size-3.5 shrink-0 mt-0.5" />
+          Not yet in the Swell consumer marketplace — plan leans on sales history.
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -382,128 +557,6 @@ function SignalRow({ label, value }: { label: string; value: string }) {
       <span className="text-fg-muted">{label}</span>
       <span className="font-medium tabular-nums">{value}</span>
     </div>
-  );
-}
-
-function DayCell({
-  day,
-  index,
-  brandColor,
-  editable,
-  onClick,
-}: {
-  day: CampaignDay;
-  index: number;
-  brandColor: string;
-  editable: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <motion.button
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: Math.min(index * 0.012, 0.4) }}
-      onClick={onClick}
-      className="group relative flex min-h-[128px] flex-col border-b border-r border-border p-2.5 text-left transition hover:bg-surface-2 focus:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset"
-      style={{ ["--tw-ring-color" as string]: brandColor }}
-    >
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1 text-xs font-semibold text-fg-subtle">
-          {parseLocalDate(day.date).getDate()}
-          {day.weather && (
-            <span
-              className={day.weather.source === "seasonal" ? "font-normal opacity-60" : "font-normal"}
-              title={weatherTitle(day.weather)}
-            >
-              {day.weather.icon}
-            </span>
-          )}
-        </span>
-        <span
-          className="rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white"
-          style={{ background: brandColor }}
-        >
-          {day.pct_off}%
-        </span>
-      </div>
-      <div className="mt-2 flex-1">
-        <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg">{day.item}</div>
-        <div className="mt-1 flex items-center gap-1 text-[11px] text-fg-subtle">
-          <span
-            className="size-1.5 rounded-full"
-            style={{ background: DAYPART_TONE[day.daypart] }}
-          />
-          {day.daypart}
-        </div>
-        {day.event && (
-          <div
-            className="mt-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium"
-            style={{ background: `${brandColor}1a`, color: brandColor }}
-            title={day.event.name}
-          >
-            {day.event.type === "holiday" ? "🎉" : "🎫"} <span className="line-clamp-1">{day.event.name}</span>
-          </div>
-        )}
-      </div>
-      <div className="line-clamp-2 text-[11px] leading-tight text-fg-subtle">{day.copy}</div>
-      {editable && (
-        <span className="absolute right-2 top-2 hidden group-hover:block">
-          <Pencil className="size-3 text-fg-subtle" />
-        </span>
-      )}
-    </motion.button>
-  );
-}
-
-function DayListItem({
-  day,
-  brandColor,
-  editable,
-  onClick,
-}: {
-  day: CampaignDay;
-  brandColor: string;
-  editable: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-surface p-3 text-left shadow-soft active:scale-[0.99] transition"
-    >
-      <div className="flex size-12 shrink-0 flex-col items-center justify-center rounded-xl bg-surface-2">
-        <span className="text-[10px] font-medium uppercase text-fg-subtle">{dowShort(day.date)}</span>
-        <span className="text-base font-semibold leading-none">{parseLocalDate(day.date).getDate()}</span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-semibold">{day.item}</span>
-          <span
-            className="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white"
-            style={{ background: brandColor }}
-          >
-            {day.pct_off}%
-          </span>
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-subtle">
-          <Clock className="size-3" />
-          {day.daypart} · {day.discount_window}
-          {day.weather && (
-            <span className="ml-1" title={weatherTitle(day.weather)}>
-              {day.weather.icon} {day.weather.tempF}°
-              {day.weather.source === "seasonal" && (
-                <span className="text-fg-subtle/70"> avg</span>
-              )}
-            </span>
-          )}
-          {day.event && (
-            <span style={{ color: brandColor }}>· {day.event.type === "holiday" ? "🎉" : "🎫"} {day.event.name}</span>
-          )}
-        </div>
-        <div className="mt-1 line-clamp-1 text-xs text-fg-muted">{day.copy}</div>
-      </div>
-      {editable && <Pencil className="size-3.5 shrink-0 text-fg-subtle" />}
-    </button>
   );
 }
 
@@ -580,7 +633,7 @@ function EditModal({
   const title = editable ? "Edit promotion" : "Promotion";
 
   return (
-    <Modal open={!!day} onClose={onClose} title={title}>
+    <Modal open={!!day} onClose={onClose} title={title} className={osClass()}>
       <div className="p-5">
         {/* creative preview */}
         <div className="mb-5 overflow-hidden rounded-xl border border-border bg-surface-2">
@@ -862,7 +915,7 @@ function DistributionPanel({
       </p>
 
       {/* Publish workflow — everything needed to go live on this channel NOW. */}
-      <Modal open={!!publishing} onClose={() => setPublishing(null)} title={publishing ? `Publish to ${publishing.name}` : ""}>
+      <Modal open={!!publishing} onClose={() => setPublishing(null)} title={publishing ? `Publish to ${publishing.name}` : ""} className={osClass()}>
         {publishing && (
           <div className="space-y-4">
             <PublishStep n={1} title="Download the creatives (pre-sized)">
@@ -1105,64 +1158,4 @@ function OperatorTools({
       )}
     </Card>
   );
-}
-
-function RealtimeContext({
-  context,
-  brandColor,
-}: {
-  context: ContextSummary;
-  brandColor: string;
-}) {
-  const rows = [
-    { label: "Live forecast", value: `${context.forecast_days} days · avg ${context.avg_temp_f}°` },
-    ...(context.seasonal_days > 0
-      ? [{ label: "Seasonal normals", value: `${context.seasonal_days} days (est.)` }]
-      : []),
-    { label: "Wet days", value: `${context.rain_days}` },
-    { label: "Warm days", value: `${context.warm_days}` },
-    { label: "Local event days", value: `${context.event_days}` },
-  ];
-  return (
-    <Card className="p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <CloudSun className="size-4" style={{ color: brandColor }} />
-        <span className="text-sm font-semibold">Live conditions</span>
-        <Badge tone="muted" className="ml-auto gap-1">
-          <span className="size-1.5 rounded-full bg-mint-500 animate-pulse" /> real-time
-        </Badge>
-      </div>
-      <div className="mb-2 flex items-center gap-1 text-xs text-fg-subtle">
-        <MapPin className="size-3" />
-        {context.location_label}
-      </div>
-      {rows.map((r) => (
-        <div key={r.label} className="flex items-center justify-between py-1 text-sm">
-          <span className="text-fg-muted">{r.label}</span>
-          <span className="font-medium tabular-nums">{r.value}</span>
-        </div>
-      ))}
-      <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
-        Items, discounts &amp; copy adapt to each day&apos;s weather and nearby events.
-        {context.seasonal_days > 0 && (
-          <>
-            {" "}
-            Forecasts run out at 16 days, so later dates use the average weather for that calendar
-            date over the past 5 years — an estimate, marked &ldquo;est.&rdquo;
-          </>
-        )}
-      </p>
-    </Card>
-  );
-}
-
-function shade(hex: string, amt: number): string {
-  const h = hex.replace("#", "");
-  const r = clampByte(parseInt(h.slice(0, 2) || "f7", 16) + amt);
-  const g = clampByte(parseInt(h.slice(2, 4) || "54", 16) + amt);
-  const b = clampByte(parseInt(h.slice(4, 6) || "10", 16) + amt);
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
-function clampByte(n: number) {
-  return Math.max(0, Math.min(255, n));
 }

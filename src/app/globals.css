@@ -367,3 +367,66 @@
   .tilt { transition: none; }
   html { scroll-behavior: auto; }
 }
+
+/* ============================================================
+   Swell OS — the campaign artifact skin (from the Claude Design
+   comp "Swell Artifact.dc.html"). One committed dark editorial
+   surface: near-black ground, cream type, amber accent, mint
+   signal, mono micro-labels. Redefining the semantic tokens here
+   re-skins every themed component (cards, buttons, charts,
+   modals) that renders inside it.
+   ============================================================ */
+.swell-os {
+  --bg: #0a0c0b;
+  --bg-subtle: #0d100e;
+  --surface: #101312;
+  --surface-2: #0d100e;
+  --border: rgba(237, 232, 220, 0.1);
+  --border-strong: rgba(237, 232, 220, 0.22);
+  --fg: #ede8dc;
+  --fg-muted: #9a968a;
+  --fg-subtle: #6b685e;
+  --shadow-color: 0 0 0;
+  --os-amber: #e8a33d;
+  --os-amber-bright: #f2b655;
+  --os-mint: #7fd1ae;
+  --os-violet: #b9a8e8;
+  --os-line: rgba(237, 232, 220, 0.08);
+  /* Comp typography: Newsreader display, Schibsted Grotesk text,
+     Spline Sans Mono labels — wired to next/font variables. */
+  --font-display: var(--font-os-serif), Georgia, serif;
+  --font-sans: var(--font-os-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-os-mono), ui-monospace, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  color-scheme: dark;
+}
+.swell-os ::selection {
+  background: var(--os-amber);
+  color: #0a0c0b;
+}
+/* Mono micro-label — the comp's signature. */
+.os-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+.os-chip {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+@keyframes osPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.os-pulse { animation: osPulse 1.8s infinite; }
