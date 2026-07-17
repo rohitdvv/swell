@@ -44,6 +44,7 @@ import { toast } from "@/components/toaster";
 import { CampaignIntelligence } from "@/components/campaign-insights";
 import { validateProjection } from "@/lib/validate";
 import { AssistantWidget } from "@/components/assistant-widget";
+import { CopyLink } from "@/components/copy-link";
 import { floorScript } from "@/lib/calendar";
 
 // ---- Swell OS typography (from the Claude Design comp) -------
@@ -69,11 +70,20 @@ export function CampaignBoard({
   initial,
   editable = true,
   showActivate = true,
+  share = false,
+  notice,
+  footer,
 }: {
   initial: CampaignWithDays;
   editable?: boolean;
   /** Hidden on the public demo, where nothing may be mutated. */
   showActivate?: boolean;
+  /** Show a copy-link Share button in the OS header (public artifact pages). */
+  share?: boolean;
+  /** A slim OS-styled ribbon under the header (e.g. the demo read-only note). */
+  notice?: React.ReactNode;
+  /** OS-styled page footer, rendered inside the dark skin so nothing clashes. */
+  footer?: React.ReactNode;
 }) {
   const [campaign] = React.useState(initial);
   const [days, setDays] = React.useState<CampaignDay[]>(initial.days);
@@ -161,6 +171,7 @@ export function CampaignBoard({
             />
             {paused ? "PAUSED" : "LIVE"}
           </span>
+          {share && <CopyLink label="Share" />}
           {showActivate && (
             <button
               onClick={activate}
@@ -180,6 +191,15 @@ export function CampaignBoard({
           )}
         </div>
       </header>
+
+      {notice && (
+        <div
+          className="border-b px-5 py-3 sm:px-10"
+          style={{ borderColor: "var(--os-line)", background: "var(--surface)" }}
+        >
+          <div className="mx-auto max-w-[1180px]">{notice}</div>
+        </div>
+      )}
 
       {/* ══ Masthead ══ */}
       <section className="relative overflow-hidden border-b" style={{ borderColor: "var(--os-line)" }}>
@@ -306,6 +326,12 @@ export function CampaignBoard({
           <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
         )}
       </main>
+
+      {footer && (
+        <footer className="border-t" style={{ borderColor: "var(--os-line)" }}>
+          {footer}
+        </footer>
+      )}
 
       <EditModal
         day={editing}
