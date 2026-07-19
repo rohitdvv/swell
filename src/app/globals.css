@@ -430,3 +430,24 @@
   50% { opacity: 0.3; }
 }
 .os-pulse { animation: osPulse 1.8s infinite; }
+
+/* ---- Landing comp motion ---- */
+@keyframes osTicker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.os-ticker { animation: osTicker 38s linear infinite; }
+
+@keyframes osFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+.os-fade-up { animation: osFadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.os-fade-up-delay { animation: osFadeUp 0.7s 0.15s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .os-ticker,
+  .os-pulse { animation: none; }
+  .os-fade-up,
+  .os-fade-up-delay { animation: none; opacity: 1; transform: none; }
+}

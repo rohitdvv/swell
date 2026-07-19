@@ -37,7 +37,6 @@ import {
   cn,
 } from "@/lib/utils";
 import Link from "next/link";
-import { Newsreader, Schibsted_Grotesk, Spline_Sans_Mono } from "next/font/google";
 import { Button, Badge, Card, Field, Input, Textarea, Select, Spinner } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { toast } from "@/components/toaster";
@@ -45,17 +44,8 @@ import { CampaignIntelligence } from "@/components/campaign-insights";
 import { validateProjection } from "@/lib/validate";
 import { AssistantWidget } from "@/components/assistant-widget";
 import { CopyLink } from "@/components/copy-link";
+import { osClass } from "@/components/os-theme";
 import { floorScript } from "@/lib/calendar";
-
-// ---- Swell OS typography (from the Claude Design comp) -------
-const osSerif = Newsreader({ subsets: ["latin"], style: ["normal", "italic"], variable: "--font-os-serif" });
-const osSans = Schibsted_Grotesk({ subsets: ["latin"], variable: "--font-os-sans" });
-const osMono = Spline_Sans_Mono({ subsets: ["latin"], variable: "--font-os-mono" });
-
-/** Palette + fonts for the artifact skin — also passed to portalled modals. */
-function osClass(extra?: string) {
-  return cn("swell-os", osSerif.variable, osSans.variable, osMono.variable, extra);
-}
 
 /** Never let a seasonal estimate read as if we know the weather that day. */
 function weatherTitle(w: DayWeather): string {
