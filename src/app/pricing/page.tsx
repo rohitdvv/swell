@@ -1,14 +1,10 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
-import { Check, ArrowRight, Sparkles, ShieldCheck } from "lucide-react";
-import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Button, Card, Badge, Segmented } from "@/components/ui";
+import { Check, Sparkles, ShieldCheck } from "lucide-react";
+import { osClass, OS } from "@/components/os-theme";
+import { OsNav } from "@/components/os-nav";
 import { toast } from "@/components/toaster";
-import { AuthNav } from "@/components/auth-nav";
 import {
   PLANS,
   PLAN_ORDER,
@@ -48,93 +44,108 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 grid-texture opacity-50" />
+    <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
+      <OsNav links={[{ href: "/demo", label: "Sample campaign" }, { href: "/#how", label: "How it works" }]} />
+
+      <section className="relative overflow-hidden">
         <div
-          className="absolute -top-40 left-1/2 h-[480px] w-[720px] -translate-x-1/2 rounded-full opacity-20 blur-3xl"
-          style={{ background: "radial-gradient(circle, #f75410, transparent 70%)" }}
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(80% 60% at 50% -10%, rgba(232,163,61,0.10) 0%, transparent 55%)" }}
         />
-      </div>
+        <div className="relative mx-auto max-w-[1100px] px-5 pb-24 pt-16 sm:px-10">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.amber }}>
+              PRICING
+            </div>
+            <h1 className="mt-4 font-display text-[clamp(40px,6vw,60px)] font-normal leading-[1.04] tracking-[-0.025em] text-balance">
+              Priced like a line cook, <em className="italic" style={{ color: OS.amber }}>not a consultant.</em>
+            </h1>
+            <p className="mx-auto mt-5 max-w-xl text-[16px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
+              One brain that reads your sales, your neighborhood and the weather — and ships a month
+              of on-brand campaigns. Cancel anytime.
+            </p>
 
-      <header className="sticky top-0 z-30 border-b border-border/70 glass">
-        <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
-          <Logo />
-          <nav className="ml-auto flex items-center gap-3">
-            <Link href="/account" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
-              Account
-            </Link>
-            <ThemeToggle />
-            <AuthNav />
-          </nav>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-6xl px-4 pt-16 pb-24 sm:px-6">
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="font-display text-5xl sm:text-6xl text-balance">
-            Priced like a line cook, <span className="text-ember-gradient">not a consultant.</span>
-          </h1>
-          <p className="mt-4 text-lg text-fg-muted text-pretty">
-            One brain that reads your sales, your neighborhood and the weather — and ships a
-            month of on-brand campaigns. Cancel anytime.
-          </p>
-
-          <div className="mt-8 flex items-center justify-center gap-3">
-            <Segmented
-              value={interval}
-              onChange={setInterval}
-              options={[
-                { value: "monthly", label: "Monthly" },
-                { value: "annual", label: "Annual" },
-              ]}
-            />
-            <Badge tone="mint">2 months free</Badge>
-          </div>
-        </div>
-
-        <div className="mt-12 grid items-start gap-5 lg:grid-cols-3">
-          {PLAN_ORDER.map((id, i) => {
-            const plan = PLANS[id];
-            const price = monthlyEquivalent(plan, interval);
-            return (
-              <motion.div
-                key={id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06 }}
+            <div className="mt-8 inline-flex items-center gap-3">
+              <div
+                className="inline-flex rounded border p-1"
+                style={{ borderColor: OS.line2, background: OS.panel }}
               >
-                <Card
-                  className={`relative flex h-full flex-col p-6 ${
-                    plan.popular ? "ring-2 ring-ember-500/40 shadow-lift" : ""
-                  }`}
+                {(["monthly", "annual"] as Interval[]).map((iv) => (
+                  <button
+                    key={iv}
+                    onClick={() => setInterval(iv)}
+                    className="rounded px-4 py-1.5 text-[13px] font-medium capitalize transition"
+                    style={
+                      interval === iv
+                        ? { background: OS.amber, color: OS.bg }
+                        : { color: OS.muted }
+                    }
+                  >
+                    {iv}
+                  </button>
+                ))}
+              </div>
+              <span
+                className="rounded-[3px] px-2.5 py-1 font-mono text-[10px] tracking-[0.1em]"
+                style={{ background: "rgba(127,209,174,0.12)", color: OS.mint }}
+              >
+                2 MONTHS FREE
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-12 grid items-start gap-5 lg:grid-cols-3">
+            {PLAN_ORDER.map((id) => {
+              const plan = PLANS[id];
+              const price = monthlyEquivalent(plan, interval);
+              return (
+                <div
+                  key={id}
+                  className="relative flex h-full flex-col rounded-lg border p-6"
+                  style={{
+                    borderColor: plan.popular ? OS.amber : OS.line2,
+                    background: OS.panel,
+                    boxShadow: plan.popular ? "0 24px 60px -30px rgba(232,163,61,0.4)" : "none",
+                  }}
                 >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-ember-gradient px-3 py-1 text-xs font-semibold text-white shadow-ember">
-                        <Sparkles className="size-3" /> Most popular
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-3 py-1 font-mono text-[10px] tracking-[0.1em]"
+                        style={{ background: OS.amber, color: OS.bg }}
+                      >
+                        <Sparkles className="size-3" /> MOST POPULAR
                       </span>
                     </div>
                   )}
-                  <div className="text-lg font-semibold">{plan.name}</div>
-                  <div className="mt-1 text-sm text-fg-subtle">{plan.tagline}</div>
-                  <div className="mt-5 flex items-end gap-1">
-                    <span className="font-display text-5xl leading-none">${price}</span>
-                    <span className="mb-1 text-sm text-fg-subtle">/mo</span>
+                  <div className="text-lg font-semibold" style={{ color: OS.fg }}>
+                    {plan.name}
                   </div>
-                  <div className="mt-1 h-4 text-xs text-fg-subtle">
-                    {interval === "annual" ? `billed $${plan.annual}/yr` : "billed monthly"}
+                  <div className="mt-1 text-[13px]" style={{ color: OS.subtle }}>
+                    {plan.tagline}
+                  </div>
+                  <div className="mt-5 flex items-end gap-1">
+                    <span className="font-display text-5xl leading-none tabular-nums">${price}</span>
+                    <span className="mb-1 text-sm" style={{ color: OS.subtle }}>
+                      /mo
+                    </span>
+                  </div>
+                  <div className="mt-1 h-4 font-mono text-[10px] tracking-[0.08em]" style={{ color: OS.subtle }}>
+                    {interval === "annual" ? `BILLED $${plan.annual}/YR` : "BILLED MONTHLY"}
                   </div>
 
-                  <Button
+                  <button
                     onClick={() => subscribe(id)}
-                    loading={busy === id}
-                    variant={plan.popular ? "primary" : "secondary"}
-                    size="lg"
-                    className="mt-5 w-full"
+                    disabled={busy === id}
+                    className="mt-5 flex h-11 w-full items-center justify-center rounded text-[14px] font-semibold transition hover:brightness-110 disabled:opacity-60"
+                    style={
+                      plan.popular
+                        ? { background: OS.amber, color: OS.bg }
+                        : { border: `1px solid ${OS.line2}`, color: OS.fg, background: "transparent" }
+                    }
                   >
-                    Start {plan.name}
-                  </Button>
+                    {busy === id ? "Starting…" : `Start ${plan.name}`}
+                  </button>
 
                   <ul className="mt-6 space-y-2.5">
                     {plan.features.map((f) => {
@@ -142,32 +153,33 @@ export default function PricingPage() {
                       return (
                         <li
                           key={f}
-                          className={`flex items-start gap-2.5 text-sm ${
-                            isHeader ? "pt-1 font-medium text-fg" : "text-fg-muted"
-                          }`}
+                          className="flex items-start gap-2.5 text-[13.5px]"
+                          style={{ color: isHeader ? OS.fg : OS.muted, fontWeight: isHeader ? 600 : 400, paddingTop: isHeader ? 4 : 0 }}
                         >
                           {!isHeader && (
-                            <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-mint-500/15 text-mint-600">
+                            <span
+                              className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full"
+                              style={{ background: "rgba(127,209,174,0.15)", color: OS.mint }}
+                            >
                               <Check className="size-2.5" />
                             </span>
                           )}
-                          <span className={isHeader ? "" : ""}>{f}</span>
+                          <span>{f}</span>
                         </li>
                       );
                     })}
                   </ul>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
 
-        <div className="mt-10 flex items-center justify-center gap-2 text-xs text-fg-subtle">
-          <ShieldCheck className="size-3.5" />
-          Secure checkout by Stripe. Test mode ready — no real charges without a live key.
+          <div className="mt-10 flex items-center justify-center gap-2 font-mono text-[10px] tracking-[0.08em]" style={{ color: OS.subtle }}>
+            <ShieldCheck className="size-3.5" />
+            SECURE CHECKOUT BY STRIPE · TEST MODE — NO REAL CHARGES WITHOUT A LIVE KEY
+          </div>
         </div>
       </section>
-
     </div>
   );
 }

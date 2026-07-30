@@ -23,11 +23,11 @@ import {
   CloudSun,
   CalendarDays,
 } from "lucide-react";
-import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Badge, Card, Field, Input, Segmented } from "@/components/ui";
 import { CampaignBoard } from "@/components/campaign-board";
 import { toast } from "@/components/toaster";
+import { osClass, OS } from "@/components/os-theme";
+import { OsNav } from "@/components/os-nav";
 import { UserButton } from "@clerk/nextjs";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign, CampaignRun } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
@@ -51,7 +51,10 @@ export default function ConsolePage() {
 
   if (gate === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center gap-2 text-fg-muted">
+      <div
+        className={osClass("flex min-h-screen items-center justify-center gap-2")}
+        style={{ background: OS.bg, color: OS.muted }}
+      >
         <Loader2 className="size-4 animate-spin" /> Checking your plan…
       </div>
     );
@@ -59,24 +62,31 @@ export default function ConsolePage() {
 
   if (gate === "unsubscribed") {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
-          <Card className="p-8 text-center">
-            <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-ember-gradient shadow-ember">
-              <Lock className="size-5 text-white" />
+      <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
+        <OsNav links={[{ href: "/demo", label: "Sample campaign" }, { href: "/pricing", label: "Pricing" }]} />
+        <div className="flex min-h-[calc(100vh-64px)] items-center justify-center px-4">
+          <div className="w-full max-w-sm rounded-lg border p-8 text-center" style={{ borderColor: OS.line2, background: OS.panel }}>
+            <div
+              className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg"
+              style={{ background: OS.amber, color: OS.bg }}
+            >
+              <Lock className="size-5" />
             </div>
-            <Logo href={null} />
-            <p className="mt-3 text-sm text-fg-muted">
-              {userName ? `Hi ${userName.split(" ")[0]} — one` : "One"} more step: pick a plan to
-              unlock the Console.
+            <div className="font-display text-2xl">
+              Swell <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
+            </div>
+            <p className="mt-3 text-sm" style={{ color: OS.muted }}>
+              {userName ? `Hi ${userName.split(" ")[0]} — one` : "One"} more step: pick a plan to unlock the console.
             </p>
-            <Link href="/pricing">
-              <Button className="mt-5 w-full" size="lg">
-                Choose a plan <ArrowRight className="size-4" />
-              </Button>
+            <Link
+              href="/pricing"
+              className="mt-5 flex h-11 w-full items-center justify-center gap-1.5 rounded text-[14px] font-semibold transition hover:brightness-110"
+              style={{ background: OS.amber, color: OS.bg }}
+            >
+              Choose a plan <ArrowRight className="size-4" />
             </Link>
-          </Card>
-        </motion.div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -252,25 +262,33 @@ function Console() {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border glass">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Logo />
-          <Badge tone="muted" className="hidden sm:inline-flex">
-            Brain Console
-          </Badge>
-          <div className="ml-auto flex items-center gap-2">
-            {phase === "result" && (
-              <Button variant="ghost" size="sm" onClick={reset}>
-                <RotateCcw className="size-3.5" /> New
-              </Button>
-            )}
-            <Link href="/account" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
-              Account
-            </Link>
-            <ThemeToggle />
-            <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
-          </div>
+    <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
+      <header
+        className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 sm:px-6 lg:px-8"
+        style={{ borderColor: OS.line, background: "rgba(10,12,11,0.85)", backdropFilter: "blur(14px)" }}
+      >
+        <Link href="/" className="flex items-baseline gap-2" title="Home">
+          <span className="font-display text-xl">Swell</span>
+          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
+        </Link>
+        <span className="os-label hidden md:block">CONSOLE</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/" className="hidden text-sm sm:block" style={{ color: OS.muted }}>
+            Home
+          </Link>
+          {phase === "result" && (
+            <button
+              onClick={reset}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] transition hover:brightness-110"
+              style={{ color: OS.muted }}
+            >
+              <RotateCcw className="size-3.5" /> New
+            </button>
+          )}
+          <Link href="/account" className="hidden text-sm sm:block" style={{ color: OS.muted }}>
+            Account
+          </Link>
+          <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />
         </div>
       </header>
 

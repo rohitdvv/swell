@@ -2,6 +2,11 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Show, UserButton } from "@clerk/nextjs";
 
+// Swell OS amber CTA — shared so the nav button matches every page.
+const CTA =
+  "inline-flex h-9 items-center gap-1.5 rounded px-4 text-[13px] font-semibold transition hover:brightness-110";
+const CTA_STYLE = { background: "var(--os-amber, #E8A33D)", color: "#0A0C0B" };
+
 /**
  * Signed out → "Sign in" + "Get started" (Clerk pages, Google button included).
  * Signed in  → "Console" link + Clerk's user avatar menu.
@@ -11,10 +16,7 @@ import { Show, UserButton } from "@clerk/nextjs";
 export function AuthNav() {
   if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     return (
-      <Link
-        href="/demo"
-        className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ember-gradient px-3.5 text-sm font-medium text-white shadow-ember transition hover:brightness-105"
-      >
+      <Link href="/demo" className={CTA} style={CTA_STYLE}>
         See the demo <ArrowRight className="size-3.5" />
       </Link>
     );
@@ -23,19 +25,16 @@ export function AuthNav() {
   return (
     <>
       <Show when="signed-out">
-        <Link href="/sign-in" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+        <Link href="/sign-in" className="hidden text-sm hover:text-fg sm:block text-fg-muted">
           Sign in
         </Link>
-        <Link
-          href="/sign-up"
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-ember-gradient px-3.5 text-sm font-medium text-white shadow-ember transition hover:brightness-105"
-        >
+        <Link href="/sign-up" className={CTA} style={CTA_STYLE}>
           Get started <ArrowRight className="size-3.5" />
         </Link>
       </Show>
 
       <Show when="signed-in">
-        <Link href="/console" className="hidden text-sm text-fg-muted hover:text-fg sm:block">
+        <Link href="/console" className="hidden text-sm hover:text-fg sm:block text-fg-muted">
           Console
         </Link>
         <UserButton appearance={{ elements: { avatarBox: "w-8 h-8" } }} />

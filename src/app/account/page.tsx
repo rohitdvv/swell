@@ -4,10 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { CreditCard, LogOut, Zap, CheckCircle2, ArrowRight } from "lucide-react";
-import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button, Card, Badge, Spinner } from "@/components/ui";
 import { toast } from "@/components/toaster";
+import { osClass, OS } from "@/components/os-theme";
 import type { Subscription } from "@/lib/types";
 
 type Me = {
@@ -67,19 +66,19 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border glass">
-        <div className="mx-auto flex h-16 max-w-3xl items-center px-4 sm:px-6">
-          <Logo />
-          <Badge tone="muted" className="ml-3 hidden sm:inline-flex">
-            Account
-          </Badge>
-          <div className="ml-auto flex items-center gap-2">
-            <Link href="/console" className="text-sm text-fg-muted hover:text-fg">
-              Console
-            </Link>
-            <ThemeToggle />
-          </div>
+    <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
+      <header
+        className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b px-4 sm:px-6"
+        style={{ borderColor: OS.line, background: "rgba(10,12,11,0.85)", backdropFilter: "blur(14px)" }}
+      >
+        <Link href="/" className="flex items-baseline gap-2" title="Home">
+          <span className="font-display text-xl">Swell</span>
+          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
+        </Link>
+        <span className="os-label hidden md:block">ACCOUNT</span>
+        <div className="ml-auto flex items-center gap-4 text-sm">
+          <Link href="/" style={{ color: OS.muted }}>Home</Link>
+          <Link href="/console" style={{ color: OS.muted }}>Console</Link>
         </div>
       </header>
 
