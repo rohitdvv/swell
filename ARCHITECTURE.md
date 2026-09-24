@@ -3,27 +3,35 @@
 End-to-end architecture of the Swell operator platform: a multi-agent AI system that
 turns a restaurant's POS export + website + location into a 30-day, weather- and
 event-aware promotional campaign with revenue projections, branded creative, ad kit,
-and a grounded assistant — behind real auth and subscription billing.
+and a grounded assistant — behind real auth, tenant isolation, AI guardrails and
+subscription billing.
+
+**Live:** https://swell-ten-theta.vercel.app · health: [`/api/health`](https://swell-ten-theta.vercel.app/api/health)
 
 ## System overview
 
 ```mermaid
 flowchart LR
   subgraph Client [Next.js App Router — React 19]
-    L["/ landing"] --> A["/auth<br/>sign up / sign in"]
+    L["/ landing"] --> A["/sign-up · /sign-in<br/>(Clerk)"]
+    L --> DEMO["/demo<br/>free, read-only"]
     A --> P["/pricing<br/>plan → checkout"]
     P --> C["/console<br/>upload · generate · edit"]
-    C --> ART["/c/[slug]<br/>public campaign artifact"]
+    C --> ART["/c/[slug]<br/>campaign artifact"]
     ART --- W["Ask Swell<br/>RAG assistant"]
   end
 
+  subgraph Edge [proxy.ts + security layer]
+    PX["Clerk session · CSP/HSTS headers<br/>authz · zod · rate limits"]
+  end
+
   subgraph API [API routes — Node runtime]
-    AUTH["/api/auth/*"]
     BILL["/api/billing/* · /api/stripe/webhook"]
     GEN["/api/generate"]
     CRUD["/api/campaigns* · /api/campaign-days*"]
     CRE["/api/creative/[file]"]
     ASST["/api/assistant"]
+    HL["/api/health"]
   end
 
   subgraph Brain [Multi-agent orchestrator]
@@ -31,7 +39,7 @@ flowchart LR
   end
 
   subgraph Data [Postgres — PGlite local / Neon prod]
-    DB[(users · subscriptions · restaurants<br/>campaigns · campaign_days · marketplace_signals)]
+    DB[(users · subscriptions · restaurants<br/>campaigns · campaign_days · campaign_runs<br/>marketplace_signals · rate_limits)]
   end
 
   subgraph External [Live external services]
@@ -40,10 +48,10 @@ flowchart LR
     TM["Ticketmaster<br/>concerts/sports (optional)"]
     MDB["TheMealDB<br/>food photography"]
     ST["Stripe<br/>checkout + webhooks"]
-    LLM["Claude / Groq<br/>(optional)"]
+    LLM["xAI / Claude / Groq<br/>+ Prompt Guard 2 (optional)"]
   end
 
-  Client --> API
+  Client --> PX --> API
   GEN --> O
   O --> OM & NG & TM
   O --> LLM
@@ -65,7 +73,7 @@ flowchart TB
   LO["Location Agent<br/>geocode venue"]
   WE["Weather Agent<br/>live forecast + seasonal normals"]
   EV["Events Agent<br/>holidays + ticketed events"]
-  AN["Analyst Agent<br/>z-score dayparts,<br/>score items (margin × mix)"]
+  AN["Analyst Agent<br/>forecast model (walk-forward CV,<br/>conformal ranges), z-score dayparts,<br/>score items (margin × mix)"]
   ST["Strategy Agent<br/>30 offers: item, window, %,<br/>adapted per day to weather/events"]
   CO["Copywriter Agent<br/>caption/day + claims guardrail"]
   CR["Creative Agent<br/>poster/day, brand duotone,<br/>ad-kit aspect ratios"]
@@ -90,7 +98,7 @@ flowchart TB
 | Analyst | `generator.ts:analyzeSales` + `model.ts:trainSalesModel` | daypart z-scores + item scores, **plus** model selection among 3 forecasters (seasonal mean, ridge weekday, ridge trend+weekday) by 30-day walk-forward CV with a seasonal-naive benchmark, horizon-banded split-conformal intervals and cross-conformal coverage; learns trend, strongest/weakest days, anomaly days |
 | Strategy | `generator.ts:buildDayPlan` | all of the above → 30 `RawDay`s (weather/event deltas applied) |
 | Copywriter | `copy.ts` | day plan + voice → caption <80 chars, prohibited-claims guardrail; LLM optional, deterministic fallback |
-| Creative | `creative.ts` | day + brand → poster PNG (photo duotone or brand gradient) in 4 aspect ratios |
+| Creative | `creative.ts` + `poster-fonts.ts` | day + brand → poster PNG (photo duotone or brand gradient) in 4 aspect ratios; text in bundled Geist via fontconfig (serverless hosts have no fonts) |
 | Revenue | `generator.ts:assembleCampaign` + `project.ts` | days → projections, baseline, strategy notes |
 
 ### Revenue model (the projection math)
@@ -190,8 +198,26 @@ sequenceDiagram
    - *keyless* → intent-matched deterministic answers; if retrieval confidence is low it
      **says "I don't have that"** and lists what it can answer — it never stitches
      unrelated facts;
-   - *with `ANTHROPIC_API_KEY`/`GROQ_API_KEY`* → LLM generation constrained to the
-     retrieved chunks with a no-invention system prompt.
+   - *with `XAI_API_KEY`/`ANTHROPIC_API_KEY`/`GROQ_API_KEY`* → LLM generation constrained
+     to the retrieved chunks with a no-invention system prompt.
+4. **Guard**:
+   - *before* — `screenQuestion()` (regex) and `injectionScore()` (Llama Prompt Guard 2,
+     refuse ≥ 0.9) stop prompt injection before retrieval or generation;
+   - *after* — `unsupportedNumbers()` extracts every $, % and count from the answer; any
+     figure not supported by the retrieved facts (±5% rounding) discards the LLM answer
+     and the deterministic engine answers instead (`source: "rules"`).
+
+```mermaid
+flowchart LR
+  Q[question] --> S1{regex screen}
+  S1 -- injection --> R0[refuse]
+  S1 --> S2{Prompt Guard 2}
+  S2 -- score ≥ 0.9 --> R0
+  S2 --> RET[retrieve facts] --> LLMG[LLM answer]
+  LLMG --> G{every number<br/>in facts?}
+  G -- yes --> OUT[answer · source: llm]
+  G -- no --> RULES[deterministic answer · source: rules]
+```
 
 ## Data model
 
@@ -201,9 +227,9 @@ erDiagram
   restaurants ||--o{ campaigns : "restaurant_id"
   campaigns ||--|{ campaign_days : "campaign_id (cascade)"
   users {
-    text email PK
+    text email PK "mirrored from Clerk"
     text name
-    text password_hash
+    text restaurant_name
   }
   subscriptions {
     text email PK
@@ -214,7 +240,9 @@ erDiagram
   }
   campaigns {
     text id PK
-    text slug UK "public URL"
+    text slug UK "URL"
+    text owner_email "null = system demo"
+    text status "draft | published"
     real projected_revenue
     text agent_trace_json
     text context_json "weather/events summary"
@@ -231,10 +259,15 @@ erDiagram
     text event_json
     text creative_url
   }
+  rate_limits {
+    text key PK
+    bigint window_start PK
+    int count
+  }
   campaign_runs {
     text id PK
     text email FK
-    text campaign_slug
+    text campaign_id
     text created_at
     real projected_low
     real projected_expected
@@ -255,21 +288,29 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
 
 ## API surface
 
-| Route | Method | Purpose |
-|---|---|---|
-| `/sign-in` `/sign-up` | — | Clerk-hosted auth (Google + email); no hand-rolled sessions |
-| `/api/billing/checkout` | POST | Stripe Checkout (or instant demo sub); requires signed-in user |
-| `/api/billing/me` | GET | user + subscription + plan + usage |
-| `/api/billing/portal · bind` | POST | Stripe billing portal / post-checkout cookie bind |
-| `/api/stripe/webhook` | POST | subscription lifecycle sync (signature-verified) |
-| `/api/parse-csv` | POST | Toast/Square CSV/XLSX → `ParsedSalesSummary` (rejects <14 days) |
-| `/api/brand-kit` | POST | URL → `BrandKit` |
-| `/api/generate` | POST | full orchestration → persisted campaign (+ poster prewarm) |
-| `/api/campaigns` `[slug]` `[slug]/action` | GET/POST/DELETE | list/read/activate/publish/archive |
-| `/api/campaign-days/[id]` | PATCH | inline edit; projections recompute server-side |
-| `/api/creative/[file]` | GET | poster/ad PNG (sharp; disk-cached; `?ratio=` for ad sizes) |
-| `/api/runs` | GET | this account's generation history (projection, band, confidence, checks) |
-| `/api/assistant` | POST | grounded Q&A over one campaign |
+Access: **public** = anyone · **viewer** = published/demo, or the owner of a draft ·
+**owner** = the signed-in owner · **user** = any signed-in account. Limits are per user
+or per IP, per window.
+
+| Route | Method | Access | Limit | Purpose |
+|---|---|---|---|---|
+| `/sign-in` `/sign-up` | — | public | Clerk | Clerk-hosted auth (Google + email) |
+| `/api/billing/checkout` | POST | user | — | Stripe Checkout (or instant demo sub) |
+| `/api/billing/me` | GET | user | — | user + subscription + plan + usage |
+| `/api/billing/portal · bind` | POST | user | — | Stripe portal / post-checkout bind (refuses others' sessions) |
+| `/api/stripe/webhook` | POST | Stripe signature | — | subscription lifecycle sync |
+| `/api/parse-csv` | POST | user | 40/h | CSV/XLSX ≤ 15 MB → `ParsedSalesSummary` (rejects <14 days) |
+| `/api/brand-kit` | POST | user | 30/h | URL → `BrandKit` via SSRF-safe fetch |
+| `/api/generate` | POST | user | 10/h | zod-validated orchestration → campaign owned by caller |
+| `/api/campaigns` | GET | user | — | **your** campaigns only |
+| `/api/campaigns/[slug]` | GET · DELETE | viewer · owner | — | read / delete |
+| `/api/campaigns/[slug]/action` | POST | owner | — | activate · pause · publish · archive |
+| `/api/campaigns/[slug]/calendar` | GET | viewer | — | `.ics` feed |
+| `/api/campaign-days/[id]` | PATCH | owner | — | inline edit; caption guardrail; projections recompute server-side |
+| `/api/creative/[file]` | GET | viewer | 400/min/IP | poster/ad PNG (`?ratio=`) |
+| `/api/runs` | GET | user | — | this account's generation history |
+| `/api/assistant` | POST | viewer | per user + IP | guarded, grounded Q&A over one campaign |
+| `/api/health` | GET | public | 60/min/IP | database + LLM status, commit SHA (no secrets) |
 
 ## Deployment topology
 
@@ -277,8 +318,12 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
 - Weather/geocoding/holidays are keyless public APIs called at request time.
 - Env: `DATABASE_URL`, `NEXT_PUBLIC_BASE_URL`, Clerk (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
   `CLERK_SECRET_KEY`); optional `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`,
-  `ANTHROPIC_API_KEY`/`GROQ_API_KEY`, `TICKETMASTER_API_KEY`.
-- CI: GitHub Actions (`npm ci → lint → build`) on every push/PR.
+  `XAI_API_KEY`/`ANTHROPIC_API_KEY`/`GROQ_API_KEY` (+ `GROQ_MODEL`, `ANTHROPIC_MODEL`),
+  `TICKETMASTER_API_KEY`.
+- CI: GitHub Actions on Node 24 (`npm ci → typecheck → lint → test → build`) on every push/PR;
+  Vercel deploys `main` to production.
+- Observability: `/api/health` for uptime monitors; LLM failures are logged per provider/model
+  (`[llm] provider/model failed: …`) and surfaced in the health payload.
 
 ## Forecast model (`src/lib/model.ts`)
 
@@ -305,7 +350,8 @@ timezone invariance.
   grounded-number check; captions: claims guardrail. Every AI path has a deterministic fallback.
 - **Abuse** — Postgres fixed-window rate limits per user / IP on generate, upload, brand-kit,
   assistant, creative and health.
-- Tests: `test/security.test.ts`, `test/ai-guardrails.test.ts`, `test/ingest.test.ts`.
+- Tests: `test/security.test.ts`, `test/ai-guardrails.test.ts`, `test/ingest.test.ts`,
+  `test/poster-fonts.test.ts`.
 
 ## Honesty guarantees (by design)
 
@@ -325,7 +371,7 @@ timezone invariance.
 
 ## Scaling path (not yet built)
 
-Multi-restaurant workspaces per account → row-level ownership (`campaigns.owner_email`),
-background job queue for poster rendering (currently request-time + disk cache), Meta/
+Multi-restaurant workspaces and team seats on top of the existing per-campaign ownership,
+nonce-based CSP (drop `'unsafe-inline'`), background job queue for poster rendering (currently request-time + disk cache), Meta/
 Google Ads OAuth publish (assets are already exported in every required aspect ratio),
 and read replicas if artifact traffic outgrows a single Neon instance.

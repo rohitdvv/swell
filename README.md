@@ -7,7 +7,10 @@ campaign** of recurring, on-brand discounts — with auto-branded marketing crea
 persisted and published as a shareable public URL.
 
 This is the **operator side**: the Generator, the public Campaign Artifact, and the
-internal Brain Console. Built to run and demo with **zero paid services and no API keys**.
+internal Brain Console. Every AI feature is optional: with no LLM keys the whole pipeline
+runs on deterministic engines and free public APIs.
+
+### 🔗 Live: **[swell-ten-theta.vercel.app](https://swell-ten-theta.vercel.app)** · [Try the demo campaign](https://swell-ten-theta.vercel.app/demo) (free, no sign-up) · [Status](https://swell-ten-theta.vercel.app/api/health)
 
 [![CI](https://github.com/rohitdvv/swell/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/swell/actions/workflows/ci.yml)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/swell&env=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,CLERK_SECRET_KEY&envDescription=Clerk%20keys%20for%20Google%20%2B%20email%20sign-in)
@@ -32,8 +35,8 @@ internal Brain Console. Built to run and demo with **zero paid services and no A
 **Clerk** handles identity (Google or email) at `/sign-up` and `/sign-in`, `/pricing`
 starts Stripe checkout for the signed-in account, and `/console` is gated: signed-out
 visitors are redirected to sign-in, signed-in users without an active subscription are
-sent to pick a plan. The landing page, `/pricing`, the live `/demo` and every published
-campaign URL stay public.
+sent to pick a plan. The landing page, `/pricing`, the live `/demo` (free for everyone,
+read-only) and every **published** campaign URL stay public. Drafts are private to their owner.
 
 ## The three pieces
 
@@ -41,8 +44,8 @@ campaign URL stay public.
 |---|---|---|
 | **Brain Console** | `/console` | Gated by account + active subscription. Upload CSV → paste URL + location → generate → edit any of the 30 deals → publish. |
 | **The Generator** | `/api/generate` | The brain. Parses sales, extracts the brand kit, reads marketplace demand, composes a 30-day plan, writes copy, renders creative, persists to the DB. |
-| **Campaign Artifact** | `/c/[slug]` | The public deliverable. Calendar + **Report** (sales vs projection charts) + **Posters** + **Distribution** tabs, Activate, inline edit. OG/Twitter share cards. No auth. |
-| **Assistant** | floating "Ask Swell" | RAG chatbot on every campaign — answers the owner's questions ("why is Tuesday 30% off?") grounded in *their* campaign data. |
+| **Campaign Artifact** | `/c/[slug]` | The deliverable. Calendar + **Intelligence** (forecast with calibrated range, model card) + **Report** + **Posters** + **Distribution** tabs, Activate, inline edit (owner only). OG/Twitter share cards. Public once published. |
+| **Assistant** | floating "Ask Swell" | RAG chatbot on every campaign — answers the owner's questions ("why is Tuesday 30% off?") grounded in *their* campaign data, behind input and output guardrails. |
 
 Start at **`/`** → **Get started** (sign up) → pick a plan → **`/console`**.
 
@@ -56,10 +59,16 @@ npm run dev          # http://localhost:3000
 npm test             # model calibration, security & guardrail suites (Vitest)
 ```
 
-Then sign up at `/auth`, pick any plan (instant demo mode without a Stripe key), and in
-the Console click **“Load the Osteria Lume sample”** —
-a realistic 45-day NYC trattoria export is parsed live and turned into a full campaign.
-No CSV or API key required.
+Put the two Clerk keys in `.env.local` (see [Environment](#environment)). Then open `/demo`
+for a finished campaign, or sign up at `/sign-up`, pick any plan (instant demo mode without a
+Stripe key), and in the Console click **“Load the Osteria Lume sample”** — a realistic 45-day
+NYC trattoria export is parsed live and turned into a full campaign. No CSV or LLM key required.
+
+| Script | Does |
+|---|---|
+| `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
+| `npm test` | 111 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts |
+| `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
 
@@ -119,6 +128,8 @@ photo (from the restaurant's own site imagery, or free [TheMealDB](https://www.t
 food photography) composited under a **brand-colored duotone**, with the logo, offer, window,
 caption and a Swell badge. Drinks/edge cases fall back to a clean brand-gradient poster.
 Posters are disk-cached and pre-warmed on generation so the gallery is instant.
+Text is set in **Geist**, bundled in `assets/fonts/` (SIL OFL) and wired into fontconfig by
+`src/lib/poster-fonts.ts`, so posters render identically on font-less serverless hosts.
 
 ### "Ask Swell" — a RAG assistant on every campaign
 A floating chat on the console and public artifact (`src/lib/assistant.ts`). It flattens
@@ -130,6 +141,9 @@ owner's question, and answers **only from those facts** — no invented numbers.
 - **With `XAI_API_KEY` (Grok), `ANTHROPIC_API_KEY`, or free `GROQ_API_KEY`:** full LLM
   generation grounded in the retrieved chunks (classic RAG), same no-hallucination system
   prompt. Priority: xAI → Anthropic → Groq.
+- **Guarded both ways:** questions are screened for prompt injection (regex + the Llama Prompt
+  Guard 2 classifier) before any model sees them, and an answer that states a number not
+  present in the retrieved facts is thrown away in favour of the deterministic answer.
 
 ### Monday Brief + calendar + floor script
 The product promise is that Swell **shows up Monday morning**. Every campaign has:
@@ -280,7 +294,8 @@ degrades gracefully without it.
 |---|---|---|---|
 | *(none)* | — | Full pipeline: parsing, 10-agent brain, live weather + seasonal normals, holidays, geocoding, posters, charts, projection range, assistant | — |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` | free tier | Sign up / sign in with Google or email; the gated console | public pages only — no console |
-| `GROQ_API_KEY` | free | LLM captions + LLM RAG-assistant answers | deterministic on-brand engine (still good) |
+| `GROQ_API_KEY` | free | LLM captions + assistant answers (`gpt-oss-120b` chain) + Prompt Guard injection classifier | deterministic engine + regex injection screen |
+| `XAI_API_KEY` | paid | Grok captions + assistant answers (highest priority) | next provider in the chain |
 | `ANTHROPIC_API_KEY` | paid | Claude-quality captions + assistant answers | same as above |
 | `TICKETMASTER_API_KEY` | free | **Real concerts & sports** near the venue in the Events Agent | public holidays only |
 | `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | free test mode | Real Stripe Checkout + billing portal | instant demo subscriptions |
@@ -317,8 +332,10 @@ not code:
   **Google/Meta Ads** requires your verified ad accounts + OAuth + ad-spend authorization.
 - **Subscriptions / multi-tenant** — wire **Stripe** (test-mode works with a test key) for plans,
   seats and usage metering.
-- **Persistence at scale** — swap `src/lib/db.ts` for **Neon / Vercel Postgres** (free tier); the
-  `repo` interface is deliberately small and DB-agnostic.
+- **Clerk production instance** — switch from Clerk development keys to a production instance
+  (custom domain) before real customers sign in.
+- **Monitoring** — point an uptime monitor (Better Stack, UptimeRobot, Checkly) at
+  `/api/health`; it returns 503 when the database is unreachable.
 - **Richer events** — set `TICKETMASTER_API_KEY` (free tier) to layer real concerts/sports on top
   of public holidays.
 
@@ -328,25 +345,37 @@ not code:
 
 ```
 src/
+  proxy.ts                      Clerk middleware — protects /console, /account, mutating APIs
   app/
     page.tsx                    landing
+    demo/                       free, read-only demo campaign
     console/page.tsx            Brain Console (gate + wizard + board)
-    c/[slug]/page.tsx           public artifact (+ OG metadata)
+    c/[slug]/                   campaign artifact (+ OG metadata) · brief/ Monday Brief
     pricing/ account/           subscription plans + billing dashboard
-    api/…                       parse-csv, brand-kit, generate, campaigns,
-                                campaign-days, creative, sample-csv,
-                                assistant, billing/*, stripe/webhook
+    sign-in/ sign-up/ pitch/    Clerk auth pages · investor brief
+    not-found.tsx error.tsx     OS-styled 404 / error pages
+    api/…                       generate, parse-csv, brand-kit, campaigns (+ action,
+                                calendar), campaign-days, creative, sample-csv,
+                                assistant, runs, health, billing/*, stripe/webhook
   lib/
     orchestrator.ts          ← multi-agent pipeline + activity trace
     generator.ts project.ts  ← Analyst / Strategy / Revenue phases
+    model.ts                 ← forecasting: walk-forward CV model selection + conformal ranges
+    validate.ts              ← projection range, confidence, plan checks
     brand.ts marketplace.ts  ← Brand / Demand agents
     context/                 ← Location / Weather / Events agents (live APIs)
-    copy.ts                  ← Copywriter agent + guardrail
+    copy.ts                  ← Copywriter agent + caption guardrail
     creative.ts food-images.ts ← Creative agent (posters + ad kit)
-    assistant.ts             ← RAG assistant (facts → retrieval → answer)
+    assistant.ts llm.ts      ← RAG assistant · LLM client (provider chain, Prompt Guard)
+    authz.ts                 ← who can view / edit a campaign (the only place)
+    safe-fetch.ts            ← SSRF-safe fetch for user URLs
+    schemas.ts rate-limit.ts ai-guardrails.ts ← validation · abuse limits · AI guardrails
     billing/                 ← plans, Stripe, account session
     csv.ts db.ts sample.ts types.ts utils.ts
   components/
-    campaign-board.tsx  campaign-report.tsx  charts.tsx  assistant-widget.tsx
-    ui.tsx  modal.tsx  toaster.tsx  logo.tsx  theme-toggle.tsx
+    campaign-board.tsx campaign-insights.tsx campaign-report.tsx charts.tsx
+    assistant-widget.tsx os-nav.tsx landing/ ui.tsx modal.tsx toaster.tsx …
+test/
+  model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
+assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

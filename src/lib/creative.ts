@@ -1,4 +1,6 @@
 import "server-only";
+// Must load before sharp: points fontconfig at the bundled poster fonts.
+import "./poster-fonts";
 import sharp from "sharp";
 import fs from "node:fs";
 import os from "node:os";

@@ -64,6 +64,9 @@ const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   // Heavy server-only modules must not be bundled by webpack/turbopack.
   serverExternalPackages: ["sharp", "@electric-sql/pglite", "@neondatabase/serverless"],
+  // Poster fonts are read by fontconfig at runtime, not imported — the tracer
+  // can't see them, so ship them with every server function explicitly.
+  outputFileTracingIncludes: { "/**": ["./assets/fonts/**/*"] },
   // Only local images go through next/image. An open remotePatterns ("**")
   // would turn /_next/image into a free image proxy for any website.
   images: { remotePatterns: [] },
