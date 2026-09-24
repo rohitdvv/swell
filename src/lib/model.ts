@@ -1,16 +1,33 @@
 import type { ParsedSalesSummary, DailySales, DayOfWeek } from "./types";
 
 // ============================================================
-// Swell — Sales Intelligence Model
+// Swell — Sales Intelligence Model (v2)
 //
-// A real (small) learned model, not vibes:
-//   • Ridge regression on [trend, day-of-week] fit by normal equations
-//   • Backtested on a holdout of the owner's own history → honest MAE
-//   • Refit on the full series for forward prediction
-//   • Insight extraction: trend, weekday effects, anomaly days
+// No forecaster is 100% accurate: restaurant sales depend on things nobody
+// knows in advance. What this model guarantees instead is that it is as
+// accurate as the data allows, and HONEST about how accurate that is.
 //
-// Pure TypeScript, zero dependencies, deterministic — the same numbers
-// everywhere it runs (generator, Intelligence tab, assistant).
+//   1. Model selection. Three candidate forecasters compete:
+//        ridge · trend + day-of-week
+//        ridge · day-of-week        (no trend — resists over-extrapolating)
+//        seasonal mean              (avg of the last 4 same weekdays)
+//      The winner is chosen by out-of-sample error, never in-sample fit.
+//
+//   2. Walk-forward cross-validation. Train on days 1..k, forecast the next
+//      7, slide forward, repeat. Every accuracy number is measured on days the
+//      model had not seen — a single holdout is one noisy sample.
+//
+//   3. Beat-the-baseline. Every run is scored against seasonal-naive
+//      ("same as last week's same weekday"), the standard forecasting
+//      benchmark. MASE < 1 means the model genuinely adds skill.
+//
+//   4. Conformal prediction intervals. Interval widths come from the
+//      distribution of real out-of-sample errors (split conformal), and
+//      their empirical coverage is measured by cross-conformal backtest:
+//      "our 80% range contained the actual value X% of the time."
+//
+// Pure TypeScript, zero dependencies, deterministic, UTC-only date math —
+// identical output on the server and in the owner's browser.
 // ============================================================
 
 const DOW_NAMES: DayOfWeek[] = [
@@ -31,14 +48,61 @@ export type Anomaly = {
   sigma: number;
 };
 
-export type SalesModel = {
-  kind: "ridge · trend + day-of-week";
-  trainedDays: number;
-  holdoutDays: number;
-  /** Mean absolute error on the holdout window (dollars/day). */
+export type ModelName = "ridge-trend-dow" | "ridge-dow" | "seasonal-mean";
+
+export const MODEL_LABEL: Record<ModelName, string> = {
+  "ridge-trend-dow": "ridge · trend + day-of-week",
+  "ridge-dow": "ridge · day-of-week",
+  "seasonal-mean": "seasonal mean · last 4 same weekdays",
+};
+
+export type CrossValidation = {
+  folds: number;
+  /** Out-of-sample days scored across all folds. */
+  testDays: number;
+  /** Out-of-sample mean absolute error of the chosen model ($/day). */
   mae: number;
-  /** Mean absolute percentage error on the holdout window (0..1). */
+  /** Out-of-sample mean absolute percentage error (0..1). */
   mape: number;
+  /** Same folds, seasonal-naive baseline ($/day). */
+  naiveMae: number;
+  /** 1 − mae/naiveMae. Positive = the model beats the naive benchmark. */
+  skill: number;
+  /** Mean absolute scaled error vs in-sample seasonal naive. < 1 is good. */
+  mase: number;
+  /** Every candidate's out-of-sample MAE — the selection is auditable. */
+  candidates: { name: ModelName; mae: number }[];
+};
+
+/** Interval half-widths for one horizon band, from errors at that horizon. */
+export type HorizonBand = { from: number; to: number; q80: number; q95: number; n: number };
+
+export type Interval = {
+  /** Half-width of the 80% / 95% interval for the next week ($/day). */
+  q80: number;
+  q95: number;
+  /** Half-widths per forecast-horizon band — they widen as errors grow. */
+  bands: HorizonBand[];
+  /** Cross-conformal empirical coverage (0..1), null with a single fold. */
+  coverage80: number | null;
+  coverage95: number | null;
+  /** Intervals are calibrated on 1..N-day-ahead errors (the campaign length). */
+  calibrationHorizonDays: number;
+};
+
+export type SalesModel = {
+  /** Human label of the chosen forecaster. */
+  kind: string;
+  chosen: ModelName;
+  trainedDays: number;
+  /** Out-of-sample days scored (walk-forward). */
+  holdoutDays: number;
+  /** Out-of-sample MAE ($/day) — same as cv.mae, kept for existing callers. */
+  mae: number;
+  /** Out-of-sample MAPE (0..1). */
+  mape: number;
+  cv: CrossValidation;
+  interval: Interval;
   /** Average daily revenue over the history. */
   avgDaily: number;
   /** Fitted $/week trend (positive = growing). */
@@ -51,9 +115,11 @@ export type SalesModel = {
   weakestDow: DayOfWeek;
   /** Days that beat / missed the model's expectation by > 2σ. */
   anomalies: Anomaly[];
-  /** Predict net sales for a future ISO date. */
+  /** Point forecast for a future ISO date (chosen model, refit on all data). */
   predict: (isoDate: string) => number;
-  /** Residual std-dev — the model's own noise floor. */
+  /** Calibrated prediction interval for a future ISO date. */
+  predictInterval: (isoDate: string, level?: 0.8 | 0.95) => { low: number; high: number };
+  /** In-sample residual std-dev of the interpretable fit (anomaly detection). */
   sigma: number;
 };
 
@@ -92,27 +158,163 @@ function ridgeFit(X: number[][], y: number[], lambda: number): number[] {
   return solve(XtX, Xty);
 }
 
-// ---- feature engineering ------------------------------------
+// ---- UTC date helpers (identical on server and browser) -----
 
+function parts(iso: string): [number, number, number] {
+  const [y, m, d] = iso.split("-").map(Number);
+  return [y, m, d];
+}
 function dayIndex(iso: string): number {
-  return Math.floor(new Date(iso + "T00:00:00").getTime() / 86400000);
+  const [y, m, d] = parts(iso);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+function dowOf(iso: string): number {
+  const [y, m, d] = parts(iso);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun
 }
 
-/** [1, trend, Mon..Sat one-hots] — Sunday is the baseline. */
-function features(iso: string, t0: number): number[] {
-  const t = dayIndex(iso) - t0;
-  const dow = new Date(iso + "T00:00:00").getDay(); // 0=Sun
+/** [1, (trend), Mon..Sat one-hots] — Sunday is the baseline. */
+function features(iso: string, t0: number, withTrend: boolean): number[] {
+  const dow = dowOf(iso);
   const oneHots = Array(6).fill(0);
   if (dow > 0) oneHots[dow - 1] = 1;
-  return [1, t, ...oneHots];
+  return withTrend ? [1, dayIndex(iso) - t0, ...oneHots] : [1, ...oneHots];
 }
+
+// ---- candidate forecasters ----------------------------------
+
+type Predictor = (iso: string) => number;
+type Fitter = (rows: DailySales[], t0: number) => Predictor;
+
+const RIDGE_LAMBDA = 1.0;
+
+function ridgeFitter(withTrend: boolean): Fitter {
+  return (rows, t0) => {
+    const beta = ridgeFit(
+      rows.map((d) => features(d.date, t0, withTrend)),
+      rows.map((d) => d.net_sales),
+      RIDGE_LAMBDA
+    );
+    return (iso) => {
+      const f = features(iso, t0, withTrend);
+      let v = 0;
+      for (let i = 0; i < f.length; i++) v += f[i] * beta[i];
+      return Math.max(0, v);
+    };
+  };
+}
+
+/** Mean of the last `k` observations of the same weekday. */
+function seasonalMeanFitter(k: number): Fitter {
+  return (rows) => {
+    const byDow: number[][] = Array.from({ length: 7 }, () => []);
+    for (const d of rows) byDow[dowOf(d.date)].push(d.net_sales);
+    const overall = rows.reduce((a, d) => a + d.net_sales, 0) / Math.max(1, rows.length);
+    const means = byDow.map((vals) => {
+      const tail = vals.slice(-k);
+      return tail.length ? tail.reduce((a, v) => a + v, 0) / tail.length : overall;
+    });
+    return (iso) => means[dowOf(iso)];
+  };
+}
+
+/** Seasonal naive: "same as the last observed same weekday". The benchmark. */
+const seasonalNaiveFitter: Fitter = seasonalMeanFitter(1);
+
+const CANDIDATES: Record<ModelName, Fitter> = {
+  "ridge-trend-dow": ridgeFitter(true),
+  "ridge-dow": ridgeFitter(false),
+  "seasonal-mean": seasonalMeanFitter(4),
+};
+
+// ---- conformal ------------------------------------------------
+
+/**
+ * Split-conformal quantile of absolute residuals for miscoverage `alpha`.
+ * With m calibration residuals the finite-sample-valid index is
+ * ceil((m+1)(1−alpha)); if that exceeds m the honest answer is the max.
+ */
+export function conformalQuantile(absResiduals: number[], alpha: number): number {
+  const m = absResiduals.length;
+  if (m === 0) return 0;
+  const sorted = [...absResiduals].sort((a, b) => a - b);
+  const idx = Math.ceil((m + 1) * (1 - alpha)) - 1;
+  return sorted[Math.min(Math.max(idx, 0), m - 1)];
+}
+
+// ---- walk-forward CV -----------------------------------------
+
+/** The campaign length — the horizon every accuracy claim must hold over. */
+export const CALIBRATION_HORIZON = 30;
+const ORIGIN_STEP = 7;
+/** Horizon bands with their own calibrated interval widths. */
+const BANDS: [number, number][] = [
+  [1, 7],
+  [8, 14],
+  [15, CALIBRATION_HORIZON],
+];
+/** A band needs this many out-of-sample errors to be trusted on its own. */
+const MIN_BAND_N = 8;
+
+type Fold = { train: DailySales[]; test: DailySales[] };
+type Residual = { r: number; y: number; h: number };
+
+/**
+ * Rolling-origin folds: expanding training window, a new origin every week,
+ * each forecasting up to the full campaign horizon ahead. Selection and
+ * calibration therefore reflect 1..30-day-ahead error — how the product is
+ * actually used — not just next-week error.
+ */
+export function walkForwardFolds(series: DailySales[], horizon = CALIBRATION_HORIZON): Fold[] {
+  const n = series.length;
+  const minTrain = Math.max(7, Math.min(Math.max(21, Math.ceil(n * 0.4)), n - ORIGIN_STEP));
+  const folds: Fold[] = [];
+  for (let s = minTrain; s < n; s += ORIGIN_STEP) {
+    folds.push({ train: series.slice(0, s), test: series.slice(s, Math.min(s + horizon, n)) });
+  }
+  return folds;
+}
+
+/** Out-of-sample residuals (actual − predicted) per fold, tagged by horizon. */
+function cvResiduals(folds: Fold[], fitter: Fitter, t0: number): Residual[][] {
+  return folds.map(({ train, test }) => {
+    const predict = fitter(train, t0);
+    return test.map((d, i) => ({ r: d.net_sales - predict(d.date), y: d.net_sales, h: i + 1 }));
+  });
+}
+
+/**
+ * Conformal half-widths per horizon band. A band with too few errors inherits
+ * from the band before it, and widths never shrink with horizon.
+ */
+function calibrateBands(residuals: Residual[]): HorizonBand[] {
+  const out: HorizonBand[] = [];
+  for (const [from, to] of BANDS) {
+    const abs = residuals.filter((x) => x.h >= from && x.h <= to).map((x) => Math.abs(x.r));
+    const prev = out[out.length - 1];
+    let q80 = abs.length >= MIN_BAND_N ? conformalQuantile(abs, 0.2) : (prev?.q80 ?? conformalQuantile(residuals.map((x) => Math.abs(x.r)), 0.2));
+    let q95 = abs.length >= MIN_BAND_N ? conformalQuantile(abs, 0.05) : (prev?.q95 ?? conformalQuantile(residuals.map((x) => Math.abs(x.r)), 0.05));
+    if (prev) {
+      q80 = Math.max(q80, prev.q80);
+      q95 = Math.max(q95, prev.q95);
+    }
+    out.push({ from, to, q80, q95, n: abs.length });
+  }
+  return out;
+}
+
+function bandFor(bands: HorizonBand[], h: number): HorizonBand {
+  return bands.find((b) => h <= b.to) ?? bands[bands.length - 1];
+}
+
+const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 // ---- the model ----------------------------------------------
 
 /**
- * Train + backtest on the uploaded daily series. Returns null when the
- * series is missing (campaigns parsed before `daily` existed) or too short
- * to say anything honest.
+ * Train, cross-validate, select, and calibrate on the uploaded daily series.
+ * Returns null when the series is missing (campaigns parsed before `daily`
+ * existed) or too short to say anything honest (< 14 days).
  */
 export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
   const daily = sales.daily;
@@ -120,44 +322,87 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
 
   const series = [...daily].sort((a, b) => (a.date < b.date ? -1 : 1));
   const t0 = dayIndex(series[0].date);
-  const lambda = 1.0;
+  const folds = walkForwardFolds(series);
 
-  const fit = (rows: DailySales[]) => {
-    const X = rows.map((d) => features(d.date, t0));
-    const y = rows.map((d) => d.net_sales);
-    return ridgeFit(X, y, lambda);
-  };
-  const predictWith = (beta: number[], iso: string) => {
-    const f = features(iso, t0);
-    let v = 0;
-    for (let i = 0; i < f.length; i++) v += f[i] * beta[i];
-    return Math.max(0, v);
-  };
+  // 1 — score every candidate out of sample, pick the best.
+  const scored = (Object.keys(CANDIDATES) as ModelName[]).map((name) => {
+    const perFold = cvResiduals(folds, CANDIDATES[name], t0);
+    const flat = perFold.flat();
+    return { name, perFold, mae: mean(flat.map((x) => Math.abs(x.r))), flat };
+  });
+  // Parsimony rule: among candidates within 2% of the best out-of-sample
+  // error, pick the SIMPLEST. With few folds, a slightly-better complex model
+  // is more likely noise than skill.
+  const COMPLEXITY: Record<ModelName, number> = { "seasonal-mean": 0, "ridge-dow": 1, "ridge-trend-dow": 2 };
+  const minMae = Math.min(...scored.map((c) => c.mae));
+  const best = scored
+    .filter((c) => c.mae <= minMae * 1.02 + 1e-9)
+    .sort((a, b) => COMPLEXITY[a.name] - COMPLEXITY[b.name])[0];
 
-  // Backtest: hold out the last 7 days, train on the rest.
-  const holdoutDays = series.length >= 21 ? 7 : Math.max(3, Math.floor(series.length / 5));
-  const trainRows = series.slice(0, series.length - holdoutDays);
-  const testRows = series.slice(series.length - holdoutDays);
-  const betaTrain = fit(trainRows);
-  let absErr = 0;
-  let pctErr = 0;
-  for (const d of testRows) {
-    const pred = predictWith(betaTrain, d.date);
-    absErr += Math.abs(pred - d.net_sales);
-    pctErr += Math.abs(pred - d.net_sales) / Math.max(d.net_sales, 1);
+  const flat = best.flat;
+  const cvMae = best.mae;
+  const cvMape = mean(flat.map((x) => Math.abs(x.r) / Math.max(x.y, 1)));
+
+  // 2 — the benchmark, on the very same folds.
+  const naiveFlat = cvResiduals(folds, seasonalNaiveFitter, t0).flat();
+  const naiveMae = mean(naiveFlat.map((x) => Math.abs(x.r)));
+  const skill = naiveMae > 0 ? 1 - cvMae / naiveMae : 0;
+
+  // MASE: scale by in-sample seasonal-naive error (lag 7) — the standard form.
+  const lag7: number[] = [];
+  for (let i = 7; i < series.length; i++) lag7.push(Math.abs(series[i].net_sales - series[i - 7].net_sales));
+  const scale = mean(lag7);
+  const mase = scale > 0 ? cvMae / scale : 0;
+
+  // 3 — conformal intervals from REAL out-of-sample errors, per horizon band.
+  const bands = calibrateBands(flat);
+
+  // Cross-conformal coverage: calibrate on the other folds, test on this one.
+  let coverage80: number | null = null;
+  let coverage95: number | null = null;
+  if (best.perFold.length >= 2) {
+    let hit80 = 0;
+    let hit95 = 0;
+    let total = 0;
+    best.perFold.forEach((fold, i) => {
+      const calib = calibrateBands(best.perFold.filter((_, j) => j !== i).flat());
+      for (const x of fold) {
+        const b = bandFor(calib, x.h);
+        total++;
+        if (Math.abs(x.r) <= b.q80) hit80++;
+        if (Math.abs(x.r) <= b.q95) hit95++;
+      }
+    });
+    coverage80 = total ? hit80 / total : null;
+    coverage95 = total ? hit95 / total : null;
   }
-  const mae = absErr / testRows.length;
-  const mape = pctErr / testRows.length;
 
-  // Final model: refit on everything for forward prediction.
-  const beta = fit(series);
-  const predict = (iso: string) => predictWith(beta, iso);
+  // 4 — final forecaster: the winner, refit on everything.
+  const predict = CANDIDATES[best.name](series, t0);
+  const lastIdx = dayIndex(series[series.length - 1].date);
+  const predictInterval = (iso: string, level: 0.8 | 0.95 = 0.8) => {
+    const c = predict(iso);
+    const h = Math.max(1, dayIndex(iso) - lastIdx);
+    const b = bandFor(bands, h);
+    let half = level === 0.95 ? b.q95 : b.q80;
+    // Past the validated horizon there is no out-of-sample evidence at all.
+    // Widen with √(h/H) rather than pretend the calibrated width still holds.
+    if (h > CALIBRATION_HORIZON) half *= Math.sqrt(h / CALIBRATION_HORIZON);
+    return { low: Math.max(0, c - half), high: c + half };
+  };
 
-  // Residuals on the full fit → noise floor + anomaly detection.
-  const residuals = series.map((d) => d.net_sales - predict(d.date));
+  // 5 — insights always come from the interpretable ridge (trend + weekday),
+  //     whichever model forecasts best.
+  const beta = ridgeFit(
+    series.map((d) => features(d.date, t0, true)),
+    series.map((d) => d.net_sales),
+    RIDGE_LAMBDA
+  );
+  const fitted = ridgeFitter(true)(series, t0);
+  const residuals = series.map((d) => d.net_sales - fitted(d.date));
   const sigma =
     Math.sqrt(residuals.reduce((a, r) => a + r * r, 0) / Math.max(1, residuals.length - 1)) || 1;
-  const avgDaily = series.reduce((a, d) => a + d.net_sales, 0) / series.length;
+  const avgDaily = mean(series.map((d) => d.net_sales));
 
   // An anomaly must be statistically unusual (>2σ) AND material (a real
   // dollar swing) — otherwise a very well-fit series flags $50 wiggles.
@@ -166,7 +411,7 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
     .map((d, i) => ({
       date: d.date,
       actual: Math.round(d.net_sales),
-      expected: Math.round(predict(d.date)),
+      expected: Math.round(fitted(d.date)),
       sigma: residuals[i] / sigma,
     }))
     .filter((a) => Math.abs(a.sigma) >= 2 && Math.abs(a.actual - a.expected) >= materialFloor)
@@ -174,8 +419,8 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
     .slice(0, 4);
 
   // Weekday effects vs the overall average. Baseline (Sunday) coef is 0.
-  const rawEffects = [0, ...beta.slice(2, 8)]; // Sun..Sat aligned to getDay()
-  const meanEffect = rawEffects.reduce((a, b) => a + b, 0) / 7;
+  const rawEffects = [0, ...beta.slice(2, 8)]; // Sun..Sat aligned to getUTCDay()
+  const meanEffect = mean(rawEffects);
   const dowEffect = {} as Record<DayOfWeek, number>;
   DOW_NAMES.forEach((d, i) => {
     dowEffect[d] = Math.round(rawEffects[i] - meanEffect);
@@ -186,11 +431,30 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
   const trendPct = avgDaily > 0 ? trendPerWeek / (avgDaily * 7) : 0;
 
   return {
-    kind: "ridge · trend + day-of-week",
+    kind: MODEL_LABEL[best.name],
+    chosen: best.name,
     trainedDays: series.length,
-    holdoutDays,
-    mae: Math.round(mae),
-    mape,
+    holdoutDays: flat.length,
+    mae: Math.round(cvMae),
+    mape: cvMape,
+    cv: {
+      folds: folds.length,
+      testDays: flat.length,
+      mae: Math.round(cvMae),
+      mape: cvMape,
+      naiveMae: Math.round(naiveMae),
+      skill,
+      mase,
+      candidates: scored.map((c) => ({ name: c.name, mae: Math.round(c.mae) })),
+    },
+    interval: {
+      q80: Math.round(bands[0].q80),
+      q95: Math.round(bands[0].q95),
+      bands: bands.map((b) => ({ ...b, q80: Math.round(b.q80), q95: Math.round(b.q95) })),
+      coverage80,
+      coverage95,
+      calibrationHorizonDays: CALIBRATION_HORIZON,
+    },
     avgDaily: Math.round(avgDaily),
     trendPerWeek: Math.round(trendPerWeek),
     trendPct,
@@ -199,17 +463,30 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
     weakestDow: ranked[ranked.length - 1],
     anomalies,
     predict,
+    predictInterval,
     sigma,
   };
 }
 
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+
 /** One-line human summary, used by the Analyst Agent + strategy notes. */
 export function modelSummary(m: SalesModel): string {
-  const dir = m.trendPerWeek >= 0 ? "growing" : "declining";
+  const beats =
+    m.cv.skill > 0
+      ? `${pct(m.cv.skill)} more accurate than the "same as last week" baseline`
+      : `no better than the "same as last week" baseline — so it's used cautiously`;
+  const cov =
+    m.interval.coverage80 !== null
+      ? ` Its 80% range held the true value ${pct(m.interval.coverage80)} of the time in backtest.`
+      : "";
+  const trend =
+    Math.abs(m.trendPct) < 0.005
+      ? "Revenue is flat week to week"
+      : `Revenue is ${m.trendPerWeek >= 0 ? "growing" : "declining"} $${Math.abs(m.trendPerWeek)}/week (${pct(Math.abs(m.trendPct))})`;
   return (
-    `Trained ${m.kind} on ${m.trainedDays} days, backtested on the last ${m.holdoutDays} ` +
-    `(MAE ±$${m.mae}/day, ${(m.mape * 100).toFixed(1)}% error). Revenue is ${dir} ` +
-    `$${Math.abs(m.trendPerWeek).toFixed(0)}/week (${(m.trendPct * 100).toFixed(1)}%). ` +
-    `Strongest day ${m.strongestDow}, weakest ${m.weakestDow}.`
+    `Picked ${m.kind} from 3 competing models by walk-forward cross-validation on ${m.trainedDays} days ` +
+    `(${m.cv.folds} folds, ${m.cv.testDays} unseen days): ±$${m.cv.mae}/day typical error (${pct(m.cv.mape)}), ${beats}.` +
+    `${cov} ${trend}. Strongest day ${m.strongestDow}, weakest ${m.weakestDow}.`
   );
 }

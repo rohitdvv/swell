@@ -87,7 +87,7 @@ flowchart TB
 | Location | `context/geo.ts` | free-text location → lat/lon/country (Open-Meteo geocoding) |
 | Weather | `context/weather.ts` | lat/lon → 30-day `DayWeather` map: live 16-day forecast, then climate normals (`source: "seasonal"`) for the tail |
 | Events | `context/events.ts` | country+coords+dates → holidays (Nager.Date) ∪ ticketed events (Ticketmaster, optional key) |
-| Analyst | `generator.ts:analyzeSales` + `model.ts:trainSalesModel` | daypart z-scores + item scores, **plus** a ridge regression (trend + day-of-week) trained on the uploaded daily series and backtested on a holdout (honest MAE/MAPE); learns trend, strongest/weakest days, anomaly days |
+| Analyst | `generator.ts:analyzeSales` + `model.ts:trainSalesModel` | daypart z-scores + item scores, **plus** model selection among 3 forecasters (seasonal mean, ridge weekday, ridge trend+weekday) by 30-day walk-forward CV with a seasonal-naive benchmark, horizon-banded split-conformal intervals and cross-conformal coverage; learns trend, strongest/weakest days, anomaly days |
 | Strategy | `generator.ts:buildDayPlan` | all of the above → 30 `RawDay`s (weather/event deltas applied) |
 | Copywriter | `copy.ts` | day plan + voice → caption <80 chars, prohibited-claims guardrail; LLM optional, deterministic fallback |
 | Creative | `creative.ts` | day + brand → poster PNG (photo duotone or brand gradient) in 4 aspect ratios |
@@ -279,6 +279,33 @@ serverless builds. Schema auto-creates + column migrations run idempotently on b
   `CLERK_SECRET_KEY`); optional `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`,
   `ANTHROPIC_API_KEY`/`GROQ_API_KEY`, `TICKETMASTER_API_KEY`.
 - CI: GitHub Actions (`npm ci → lint → build`) on every push/PR.
+
+## Forecast model (`src/lib/model.ts`)
+
+```
+daily sales ─▶ walk-forward folds (origin every 7d, 30-day horizon, train ≤ origin only)
+            ─▶ 3 candidates scored out-of-sample  ─▶ min MAE (parsimony within 2%)
+            ─▶ residuals tagged by horizon h ─▶ conformal q80/q95 for h∈[1-7],[8-14],[15-30]
+            ─▶ refit winner on all data ─▶ predict / predictInterval (√(h/30) widening past 30)
+```
+
+All date math is UTC. `test/model.test.ts` checks recovery of known structure, beating the
+naive benchmark, out-of-time and Monte-Carlo interval coverage, parsimony, non-negativity and
+timezone invariance.
+
+## Security model
+
+- **AuthZ** — `lib/authz.ts` is the only place access is decided (`canView`, `canEdit`,
+  `requireOwner` → 401/404/403, `requireViewer`, `toPublic`). 404 rather than 403 for drafts you
+  can't see, so private campaigns don't confirm they exist.
+- **SSRF** — `lib/safe-fetch.ts`: undici `Agent` with a guarded `lookup` over a `net.BlockList`
+  (private, loopback, link-local/metadata, CGNAT, ULA, IPv4-mapped), manual redirect
+  re-validation, streamed size caps.
+- **AI** — input: regex + Prompt Guard 2 (score ≥ 0.9 refused, fails open); output:
+  grounded-number check; captions: claims guardrail. Every AI path has a deterministic fallback.
+- **Abuse** — Postgres fixed-window rate limits per user / IP on generate, upload, brand-kit,
+  assistant, creative and health.
+- Tests: `test/security.test.ts`, `test/ai-guardrails.test.ts`, `test/ingest.test.ts`.
 
 ## Honesty guarantees (by design)
 

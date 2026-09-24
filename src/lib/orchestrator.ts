@@ -186,9 +186,12 @@ export async function orchestrate(
     () => Promise.resolve({ a: analyzeSales(sales), m: trainSalesModel(sales) }),
     ({ a, m }) => {
       const slow = [...a.operating].sort((x, y) => y.slowness - x.slowness)[0];
-      const modelBit = m
-        ? `model trained on ${m.trainedDays}d (backtest MAE ±$${m.mae}/day) · trend ${m.trendPerWeek >= 0 ? "+" : ""}$${m.trendPerWeek}/wk · `
-        : "";
+      let modelBit = "";
+      if (m) {
+        const vsNaive = m.cv.skill > 0 ? `${Math.round(m.cv.skill * 100)}% better than naive` : "≈ naive";
+        const held = m.interval.coverage80 !== null ? `, 80% range held ${Math.round(m.interval.coverage80 * 100)}%` : "";
+        modelBit = `picked ${m.chosen} from 3 models (walk-forward ±$${m.mae}/day, ${vsNaive}${held}) · `;
+      }
       return `${modelBit}slowest ${slow?.daypart} (z ${slow?.z}) · ${a.items.length} items scored`;
     }
   ).then((r) => r.a);

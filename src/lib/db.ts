@@ -466,6 +466,12 @@ export const repo = {
    * The upsert is a single statement, so concurrent requests can't both slip
    * under the limit. Old windows are swept opportunistically.
    */
+  /** Round-trips the database. Returns which backend answered. */
+  async ping(): Promise<Backend["kind"]> {
+    await one(`SELECT 1 AS ok`, []);
+    return getBackend().kind;
+  },
+
   async hitRateLimit(key: string, windowStart: number): Promise<number> {
     const row = await one(
       `INSERT INTO rate_limits (key, window_start, count) VALUES ($1, $2, 1)

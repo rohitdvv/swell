@@ -67,8 +67,8 @@ type LookupCb = (
   family?: number
 ) => void;
 
-/** The DNS lookup undici connects through — refuses private destinations. */
-function guardedLookup(hostname: string, options: dns.LookupOptions, cb: LookupCb): void {
+/** The DNS lookup undici connects through — refuses private destinations. Exported for tests. */
+export function guardedLookup(hostname: string, options: dns.LookupOptions, cb: LookupCb): void {
   dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
     if (err) return cb(err, []);
     const list = addresses as dns.LookupAddress[];

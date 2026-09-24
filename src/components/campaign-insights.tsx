@@ -85,7 +85,7 @@ export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays 
           <span className="text-sm font-semibold">What the model learned from your sales</span>
           {model ? (
             <span className="ml-auto rounded-full bg-surface-2 px-2.5 py-1 font-mono text-[11px] text-fg-muted">
-              {model.kind} · {model.trainedDays}d train · backtest MAE ±{formatCurrency(model.mae)}/day
+              {model.kind} · {model.trainedDays}d · {model.cv.folds}-fold walk-forward · ±{formatCurrency(model.mae)}/day
             </span>
           ) : (
             <span className="ml-auto rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-600">
@@ -131,12 +131,18 @@ export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays 
             />
             <Learning
               icon={<Sparkles className="size-4" />}
-              tone="neutral"
+              tone={model.cv.skill > 0 ? "up" : "neutral"}
               kpi={`±${(model.mape * 100).toFixed(1)}%`}
-              label={`Backtest error on the last ${model.holdoutDays} days it never saw — how honest the forecast is`}
+              label={`Typical error on ${model.cv.testDays} days it never saw${
+                model.cv.skill > 0
+                  ? ` — ${(model.cv.skill * 100).toFixed(0)}% more accurate than "same as last week"`
+                  : ""
+              }`}
             />
           </div>
         )}
+
+        {model && <ModelCard model={model} brand={brand} />}
 
         {/* Every weekday's fitted effect, as one glanceable rhythm strip. */}
         {model && (
@@ -279,6 +285,101 @@ export function CampaignIntelligence({ campaign }: { campaign: CampaignWithDays 
   );
 }
 
+/**
+ * The model card: which forecaster won and why, how it compares to the naive
+ * benchmark, and whether its stated uncertainty held up in backtest.
+ * Collapsed by default — the owner sees the verdict, an analyst can audit.
+ */
+function ModelCard({ model, brand }: { model: SalesModel; brand: string }) {
+  const best = Math.min(...model.cv.candidates.map((c) => c.mae));
+  const worst = Math.max(...model.cv.candidates.map((c) => c.mae), model.cv.naiveMae, 1);
+  const LABELS: Record<string, string> = {
+    "ridge-trend-dow": "Trend + weekday regression",
+    "ridge-dow": "Weekday regression",
+    "seasonal-mean": "Seasonal average (last 4 weeks)",
+  };
+  const cov = model.interval.coverage80;
+  return (
+    <details className="group border-t border-border">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3 text-xs">
+        <span className="font-semibold text-fg-muted">How accurate is this?</span>
+        <span className="text-fg-subtle">
+          {cov !== null
+            ? `Its 80% range held the real number ${(cov * 100).toFixed(0)}% of the time on unseen days.`
+            : "Model card — selection, benchmark and calibration."}
+        </span>
+        <span className="ml-auto font-mono text-[10px] text-fg-subtle transition group-open:rotate-90">▸</span>
+      </summary>
+      <div className="grid gap-6 px-5 pb-5 lg:grid-cols-2">
+        <div>
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-subtle">
+            3 models competed · lower error wins
+          </div>
+          <div className="space-y-1.5">
+            {[...model.cv.candidates]
+              .sort((a, b) => a.mae - b.mae)
+              .map((c) => (
+                <Bar
+                  key={c.name}
+                  label={LABELS[c.name] ?? c.name}
+                  value={c.mae}
+                  max={worst}
+                  color={c.name === model.chosen ? brand : "var(--border-strong)"}
+                  tag={c.name === model.chosen ? "chosen" : c.mae === best ? "tied" : undefined}
+                />
+              ))}
+            <Bar label={`"Same as last week" baseline`} value={model.cv.naiveMae} max={worst} color="var(--color-rose-accent)" tag="benchmark" />
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-fg-subtle text-pretty">
+            Average $ error per day on {model.cv.testDays} days held out across {model.cv.folds} rolling
+            forecasts, each up to {model.interval.calibrationHorizonDays} days ahead. When two models are
+            within 2%, the simpler one wins.
+          </p>
+        </div>
+        <div>
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-subtle">
+            Uncertainty widens with distance
+          </div>
+          <div className="space-y-1.5">
+            {model.interval.bands.map((b) => (
+              <div key={b.from} className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-1.5 text-xs">
+                <span className="text-fg-muted">
+                  Days {b.from}–{b.to} ahead
+                </span>
+                <span className="font-mono tabular-nums">±{formatCompactCurrency(b.q80)} <span className="text-fg-subtle">(80%)</span></span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-fg-subtle text-pretty">
+            Ranges are conformal: built from the model&apos;s real past mistakes, not an assumed bell
+            curve.
+            {model.interval.coverage95 !== null &&
+              ` The 95% range held ${(model.interval.coverage95 * 100).toFixed(0)}% of the time in backtest.`}{" "}
+            No forecast is exact — this tells you how much to trust it.
+          </p>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function Bar({ label, value, max, color, tag }: { label: string; value: number; max: number; color: string; tag?: string }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-fg-muted">
+          {label}
+          {tag && <span className="ml-1.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-fg-subtle">{tag}</span>}
+        </span>
+        <span className="font-mono tabular-nums">±{formatCompactCurrency(value)}</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(4, (value / max) * 100)}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
 function Learning({
   icon,
   tone,
@@ -361,13 +462,16 @@ function buildForecast(
         })();
     const value = Math.round(base + d.projected_revenue);
     forecastTotal += value;
-    const noise = model ? model.sigma : base * 0.2;
+    // Calibrated 80% conformal interval for the baseline (widens with
+    // horizon, from real out-of-sample errors), plus the campaign-lift
+    // scenario band. Legacy campaigns without a model fall back to ±20%.
+    const iv = model ? model.predictInterval(d.date, 0.8) : { low: base * 0.8, high: base * 1.2 };
     series.push({
       date: d.date,
       value,
       kind: "forecast",
-      low: Math.max(0, Math.round(base - noise + d.projected_revenue * lowR)),
-      high: Math.round(base + noise + d.projected_revenue * highR),
+      low: Math.max(0, Math.round(iv.low + d.projected_revenue * lowR)),
+      high: Math.round(iv.high + d.projected_revenue * highR),
     });
   }
 

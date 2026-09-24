@@ -53,6 +53,7 @@ Start at **`/`** → **Get started** (sign up) → pick a plan → **`/console`*
 ```bash
 npm install
 npm run dev          # http://localhost:3000
+npm test             # model calibration, security & guardrail suites (Vitest)
 ```
 
 Then sign up at `/auth`, pick any plan (instant demo mode without a Stripe key), and in
@@ -83,7 +84,7 @@ Events ──────────────┘
 | **Location Agent** | Geocodes the venue to coordinates (Open-Meteo geocoding) |
 | **Weather Agent** | Pulls the **live 16-day forecast**, then **climate normals** for days 17–30 (Open-Meteo) — real-time, no key |
 | **Events Agent** | Finds holidays + nearby ticketed events that move demand (Nager.Date; optional Ticketmaster) |
-| **Analyst Agent** (with `model.ts`: ridge regression trained on your daily sales, backtested holdout MAE, trend + weekday effects + anomaly days) | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
+| **Analyst Agent** (with `model.ts`: three forecasters compete under 30-day walk-forward cross-validation against a “same as last week” benchmark; the winner ships with horizon-calibrated conformal 80/95% ranges) | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
 | **Strategy Agent** | Composes 30 offers — item, window, discount — blended 70/30, **adapted to each day's weather & events** |
 | **Copywriter Agent** | Writes one on-brand caption per day, through the claims/length guardrail |
 | **Creative Agent** | Renders a branded **poster for every day** (colors, logo, food imagery) |
@@ -207,13 +208,46 @@ regenerates anything an LLM produces that fails.
 
 ## Tech
 
-- **Next.js 16** (App Router) · React 19 · **Tailwind v4** · TypeScript
-- **SQLite** via `better-sqlite3` — tables `restaurants`, `campaigns`, `campaign_days`,
-  `marketplace_signals` (`src/lib/db.ts`)
-- CSV `papaparse` · XLSX `sheetjs` · HTML `cheerio` · color + PNG `sharp`
-- `framer-motion`, `lucide-react`
+- **Next.js 16.3** (App Router, `proxy.ts`) · React 19 · **Tailwind v4** · TypeScript
+- **Postgres** — embedded PGlite locally, Neon (serverless) in production via `DATABASE_URL` (`src/lib/db.ts`)
+- **Clerk** auth · **Stripe** billing · **zod** request schemas · **undici** SSRF-safe fetch
+- LLMs: Groq (`gpt-oss-120b` → `qwen3.8-27b` → `gpt-oss-20b` chain), xAI or Anthropic — all optional;
+  **Llama Prompt Guard 2** as an ML injection classifier
+- CSV `papaparse` · XLSX `sheetjs` · HTML `cheerio` · image `sharp`
+- **Vitest** — 100+ tests, run in CI with typecheck, lint and build on every push
 
-Everything free; no external APIs required.
+---
+
+## Security & trust
+
+| Layer | What it does | Where |
+| --- | --- | --- |
+| **Tenant isolation** | Every campaign has an owner. Drafts are private (slugs are guessable), edits are owner-only, the demo is read-only, owner emails never leave the server. | `lib/authz.ts` |
+| **SSRF defence** | User URLs (website, logo, images) are checked at *socket-connect time* inside the DNS lookup — defeats DNS rebinding and redirect-to-metadata. Streamed byte caps, pixel caps. | `lib/safe-fetch.ts` |
+| **Input validation** | Every request body is a bounded zod schema: hex-only colours, http(s)-only URLs, capped arrays and strings. | `lib/schemas.ts` |
+| **Rate limits** | Postgres-backed fixed windows (hold across serverless instances), fail-open. | `lib/rate-limit.ts` |
+| **Headers** | Strict CSP, HSTS preload, `X-Frame-Options: DENY`, nosniff, Permissions-Policy, COOP. | `next.config.ts` |
+| **AI input guardrail** | Regex screen + Llama Prompt Guard 2 classifier refuse prompt injection before any model sees it. | `lib/ai-guardrails.ts`, `lib/llm.ts` |
+| **AI output guardrail** | Every number in an LLM answer must appear in the retrieved facts, or the answer is discarded for the deterministic engine's. | `lib/assistant.ts` |
+| **Caption guardrail** | Prohibited claims / length checked on every generated and edited caption. | `lib/copy.ts` |
+
+`GET /api/health` reports database and LLM status for uptime monitors (no secrets).
+
+## How accurate is the forecast?
+
+No forecast of a restaurant's sales is 100% accurate — weather, a local event or a viral post
+move real numbers. Swell's promise is different: **as accurate as your data allows, and honest
+about the rest.**
+
+- **Model selection by the future, not the past.** A seasonal mean, a weekday ridge model and a
+  trend + weekday ridge model each forecast 30 days ahead from many rolling origins
+  (walk-forward CV). The most accurate wins; near-ties go to the simpler model.
+- **Benchmarked.** Every model is scored against “same as last week” (skill %, MASE).
+- **Calibrated ranges.** Split-conformal intervals, calibrated separately for week 1, week 2 and
+  weeks 3–4, so an “80% range” contains the real number ~80% of the time.
+- **Proven in tests.** Across 40 simulated restaurants and 1,200 future days, the 80% range covered
+  82.8% and the 95% range 97.3%; the model beat the naive benchmark 40/40. Forecasts are
+  identical in every timezone.
 
 ---
 
