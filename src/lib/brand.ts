@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import sharp from "sharp";
 import type { BrandKit } from "./types";
 import { seededUnit } from "./utils";
+import { safeFetch } from "./safe-fetch";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) SwellBot/1.0 Chrome/120 Safari/537.36";
@@ -26,18 +27,28 @@ function titleCaseFromDomain(domain: string): string {
   return core.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "user-agent": UA, accept: "text/html,*/*" },
-      redirect: "follow",
-    });
-  } finally {
-    clearTimeout(t);
-  }
+/**
+ * Every brand-kit fetch targets a URL the user typed, so it goes through the
+ * SSRF-safe client (private IPs refused at connect time, redirects re-checked,
+ * body capped at 3 MB). Returns a minimal Response-like shape for callers.
+ */
+async function fetchWithTimeout(
+  url: string,
+  ms = 8000
+): Promise<{ ok: boolean; status: number; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> }> {
+  const r = await safeFetch(url, {
+    timeoutMs: ms,
+    maxBytes: 3 * 1024 * 1024,
+    accept: "text/html,*/*",
+    userAgent: UA,
+  });
+  return {
+    ok: r.ok,
+    status: r.status,
+    text: async () => r.body.toString("utf8"),
+    arrayBuffer: async () =>
+      r.body.buffer.slice(r.body.byteOffset, r.body.byteOffset + r.body.byteLength) as ArrayBuffer,
+  };
 }
 
 function luminance(hex: string): number {

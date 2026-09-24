@@ -200,6 +200,9 @@ export type CampaignDay = {
 
 export type Campaign = {
   id: string;
+  /** Clerk email of the account that generated it. null = system-owned (the
+   * public demo) — nobody can mutate a system-owned campaign. */
+  owner_email: string | null;
   restaurant_id: string;
   slug: string; // full public slug [restaurant-slug]-[month]
   restaurant_slug: string;

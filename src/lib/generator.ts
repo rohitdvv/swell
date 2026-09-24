@@ -423,6 +423,7 @@ export function assembleCampaign(
 
   return {
     id: opts.campaignId,
+    owner_email: null, // stamped by the caller (/api/generate) — generation is owner-agnostic
     restaurant_id: opts.restaurantId,
     slug: `${restaurantSlug}-${monthSlug(opts.startDate)}`,
     restaurant_slug: restaurantSlug,

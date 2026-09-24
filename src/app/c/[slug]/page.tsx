@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { repo } from "@/lib/db";
 import { CampaignBoard } from "@/components/campaign-board";
+import { getAccountEmail } from "@/lib/billing/account";
+import { canView, canEdit, toPublic } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +14,8 @@ type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const campaign = await repo.getCampaignBySlug(slug);
-  if (!campaign) return { title: "Campaign not found" };
+  // Private drafts must not leak their name/numbers into link previews either.
+  if (!campaign || !canView(campaign, await getAccountEmail())) return { title: "Campaign not found" };
 
   const ogImage = campaign.days[0]
     ? `/api/creative/${campaign.days[0].id}.png?og=1`
@@ -44,7 +47,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function PublicCampaignPage({ params }: Props) {
   const { slug } = await params;
   const campaign = await repo.getCampaignBySlug(slug);
-  if (!campaign) notFound();
+  const viewer = await getAccountEmail();
+  if (!campaign || !canView(campaign, viewer)) notFound();
+  // Only the owner gets edit + activate controls; everyone else sees the
+  // published artifact read-only.
+  const isOwner = canEdit(campaign, viewer);
 
   // Edge-to-edge Swell OS artifact. The board's own header carries the brand,
   // the /C/slug label, LIVE status, Share and Activate — no outer chrome.
@@ -66,5 +73,13 @@ export default async function PublicCampaignPage({ params }: Props) {
     </div>
   );
 
-  return <CampaignBoard initial={campaign} editable share footer={footer} />;
+  return (
+    <CampaignBoard
+      initial={toPublic(campaign)}
+      editable={isOwner}
+      showActivate={isOwner}
+      share
+      footer={footer}
+    />
+  );
 }

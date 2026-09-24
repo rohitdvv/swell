@@ -3,11 +3,23 @@ import { repo } from "@/lib/db";
 import { projectDay } from "@/lib/project";
 import { generateSingleCopy } from "@/lib/copy";
 import { invalidateCreative } from "@/lib/creative";
-import { DAYPART_WINDOWS, type Daypart } from "@/lib/types";
+import { z } from "zod";
+import { DAYPARTS, DAYPART_WINDOWS, type Daypart } from "@/lib/types";
 import { dowShort } from "@/lib/utils";
+import { requireOwner } from "@/lib/authz";
+import { runGuardrail } from "@/lib/copy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Every editable field, typed and bounded. Unknown keys are dropped. */
+const Body = z.object({
+  daypart: z.enum(DAYPARTS as [Daypart, ...Daypart[]]).optional(),
+  pct_off: z.number().finite().optional(),
+  item: z.string().trim().min(1).max(80).optional(),
+  copy: z.string().trim().min(1).max(160).optional(),
+  regenerateCopy: z.boolean().optional(),
+});
 
 export async function PATCH(
   request: Request,
@@ -15,13 +27,29 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const day = await repo.getDayById(id);
-  if (!day) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const campaign = await repo.getCampaignById(day.campaign_id);
-  if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+  const campaign = day ? await repo.getCampaignById(day.campaign_id) : null;
+  const denied = await requireOwner(campaign);
+  if (denied) return denied;
+  if (!day || !campaign) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const body = await request.json().catch(() => ({}));
+  const parsed = Body.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid edit.", issues: parsed.error.issues }, { status: 400 });
+  }
+  const body = parsed.data;
 
-  const nextDaypart: Daypart = (body.daypart as Daypart) || day.daypart;
+  // Hand-written captions go through the same claims guardrail as generated ones.
+  if (body.copy) {
+    const g = runGuardrail(body.copy);
+    if (!g.ok) {
+      return NextResponse.json(
+        { error: `That caption didn't pass the guardrail: ${g.reason}.` },
+        { status: 422 }
+      );
+    }
+  }
+
+  const nextDaypart: Daypart = body.daypart || day.daypart;
   const nextPct = typeof body.pct_off === "number" ? clampPct(body.pct_off) : day.pct_off;
   const nextItem = typeof body.item === "string" && body.item.trim() ? body.item.trim() : day.item;
   const discount_window = DAYPART_WINDOWS[nextDaypart] || day.discount_window;

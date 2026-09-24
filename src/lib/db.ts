@@ -194,6 +194,14 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       event_days INTEGER NOT NULL DEFAULT 0
     )`);
   await exec(`CREATE INDEX IF NOT EXISTS idx_runs_email ON campaign_runs(email, created_at)`);
+  // Fixed-window rate-limit counters, shared across every serverless instance.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT NOT NULL,
+      window_start BIGINT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (key, window_start)
+    )`);
   await exec(`
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
@@ -229,6 +237,7 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     ["campaign_days", "event_json TEXT"],
     ["campaign_days", "context_note TEXT"],
     ["campaign_days", "expected_covers REAL NOT NULL DEFAULT 0"],
+    ["campaigns", "owner_email TEXT"],
   ];
   for (const [table, col] of cols) {
     try {
@@ -237,6 +246,15 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       /* older engines */
     }
   }
+
+  // Tenant isolation backfill: campaigns created before owner_email existed
+  // get their owner from the run log, which has always recorded who generated
+  // what. Rows with no run (the system demo) stay NULL = read-only for all.
+  await exec(`
+    UPDATE campaigns c SET owner_email = r.email
+    FROM campaign_runs r
+    WHERE c.owner_email IS NULL AND r.campaign_id = c.id AND r.email IS NOT NULL`);
+  await exec(`CREATE INDEX IF NOT EXISTS idx_campaigns_owner ON campaigns(owner_email, created_at)`);
   void kind;
 }
 
@@ -253,6 +271,7 @@ function parse<T>(v: unknown, fallback: T): T {
 function rowToCampaign(r: Row): Campaign {
   return {
     id: r.id as string,
+    owner_email: (r.owner_email as string) ?? null,
     restaurant_id: r.restaurant_id as string,
     slug: r.slug as string,
     restaurant_slug: r.restaurant_slug as string,
@@ -333,16 +352,33 @@ export const repo = {
     );
   },
 
+  /**
+   * Who owns a slug right now? `undefined` = slug is free; `null` = owned by
+   * the system (demo). Used to stop one tenant's regenerate from replacing
+   * another tenant's campaign that happens to share a restaurant name.
+   */
+  async slugOwner(slug: string): Promise<string | null | undefined> {
+    const row = await one(`SELECT owner_email FROM campaigns WHERE slug=$1`, [slug]);
+    if (!row) return undefined;
+    return (row.owner_email as string) ?? null;
+  },
+
   async createCampaign(campaign: Campaign, days: CampaignDay[]): Promise<void> {
     await withTx(async (run) => {
-      await run(`DELETE FROM campaigns WHERE slug = $1`, [campaign.slug]);
+      // Regenerate replaces ONLY the same owner's campaign at this slug —
+      // never someone else's. (IS NOT DISTINCT FROM makes NULL = NULL for
+      // the system-owned demo.)
+      await run(`DELETE FROM campaigns WHERE slug = $1 AND owner_email IS NOT DISTINCT FROM $2`, [
+        campaign.slug,
+        campaign.owner_email,
+      ]);
       await run(
         `INSERT INTO campaigns (
           id, restaurant_id, slug, restaurant_slug, restaurant_name, month, start_date, title,
           status, paused, archived, projected_revenue, projected_redemptions, baseline_revenue,
           strategy_notes_json, agent_trace_json, location, context_json,
-          brand_json, marketplace_json, sales_json, created_at, published_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+          brand_json, marketplace_json, sales_json, created_at, published_at, owner_email
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
         [
           campaign.id,
           campaign.restaurant_id,
@@ -366,6 +402,7 @@ export const repo = {
           JSON.stringify(campaign.sales_summary),
           campaign.created_at,
           campaign.published_at,
+          campaign.owner_email,
         ]
       );
       for (const d of days) {
@@ -424,8 +461,31 @@ export const repo = {
     return row ? rowToDay(row) : null;
   },
 
-  async listCampaigns(): Promise<Campaign[]> {
-    const rows = await q(`SELECT * FROM campaigns WHERE archived=0 ORDER BY created_at DESC`);
+  /**
+   * Atomically count one hit against a fixed window and return the new total.
+   * The upsert is a single statement, so concurrent requests can't both slip
+   * under the limit. Old windows are swept opportunistically.
+   */
+  async hitRateLimit(key: string, windowStart: number): Promise<number> {
+    const row = await one(
+      `INSERT INTO rate_limits (key, window_start, count) VALUES ($1, $2, 1)
+       ON CONFLICT (key, window_start) DO UPDATE SET count = rate_limits.count + 1
+       RETURNING count`,
+      [key, windowStart]
+    );
+    if (Math.random() < 0.01) {
+      // ~1% of hits prune windows older than a day. Cheap, bounded, never blocks.
+      void q(`DELETE FROM rate_limits WHERE window_start < $1`, [Date.now() - 86_400_000]).catch(() => {});
+    }
+    return num(row?.count);
+  },
+
+  /** One tenant's campaigns — never anyone else's. */
+  async listCampaigns(ownerEmail: string): Promise<Campaign[]> {
+    const rows = await q(
+      `SELECT * FROM campaigns WHERE archived=0 AND owner_email=$1 ORDER BY created_at DESC`,
+      [ownerEmail.toLowerCase()]
+    );
     return rows.map(rowToCampaign);
   },
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { repo } from "@/lib/db";
 import { campaignToIcs } from "@/lib/calendar";
+import { requireViewer } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,12 +12,11 @@ type Ctx = { params: Promise<{ slug: string }> };
 export async function GET(_req: Request, ctx: Ctx) {
   const { slug } = await ctx.params;
   const campaign = await repo.getCampaignBySlug(slug);
-  if (!campaign) {
-    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
-  }
+  const denied = await requireViewer(campaign);
+  if (denied) return denied;
 
-  const ics = campaignToIcs(campaign);
-  const filename = `${campaign.slug}-offers.ics`;
+  const ics = campaignToIcs(campaign!);
+  const filename = `${campaign!.slug}-offers.ics`;
   return new NextResponse(ics, {
     status: 200,
     headers: {

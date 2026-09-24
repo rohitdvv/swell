@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowRight, CloudSun } from "lucide-react";
 import { getDemoCampaign } from "@/lib/demo";
 import { CampaignBoard } from "@/components/campaign-board";
+import { toPublic } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export default async function DemoPage() {
 
   return (
     <CampaignBoard
-      initial={campaign}
+      initial={toPublic(campaign)}
       editable={false}
       showActivate={false}
       notice={notice}

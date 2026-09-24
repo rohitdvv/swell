@@ -15,6 +15,8 @@ import {
 import { validateProjection } from "@/lib/validate";
 import type { CampaignDay } from "@/lib/types";
 import { BriefActions } from "./brief-actions";
+import { getAccountEmail } from "@/lib/billing/account";
+import { canView } from "@/lib/authz";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +26,7 @@ type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const campaign = await repo.getCampaignBySlug(slug);
-  if (!campaign) return { title: "Brief not found" };
+  if (!campaign || !canView(campaign, await getAccountEmail())) return { title: "Brief not found" };
   return {
     title: `Monday Brief — ${campaign.restaurant_name}`,
     description: `This week's offers for ${campaign.restaurant_name}, planned by Swell.`,
@@ -44,7 +46,7 @@ function weekSlice(days: CampaignDay[]): CampaignDay[] {
 export default async function MondayBriefPage({ params }: Props) {
   const { slug } = await params;
   const campaign = await repo.getCampaignBySlug(slug);
-  if (!campaign) notFound();
+  if (!campaign || !canView(campaign, await getAccountEmail())) notFound();
 
   const brandColor = campaign.brand?.primary_color || "#f75410";
   const week = weekSlice(campaign.days);

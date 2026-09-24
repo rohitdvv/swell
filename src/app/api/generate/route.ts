@@ -5,21 +5,26 @@ import { repo } from "@/lib/db";
 import { prewarmCreatives } from "@/lib/creative";
 import { validateProjection } from "@/lib/validate";
 import { getAccountEmail } from "@/lib/billing/account";
+import { GenerateBodySchema } from "@/lib/schemas";
+import { rateLimit } from "@/lib/rate-limit";
+import { toPublic } from "@/lib/authz";
 import type { ParsedSalesSummary, Campaign, CampaignDay } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type GenerateBody = {
-  sales?: ParsedSalesSummary;
-  brand?: Campaign["brand"];
-  url?: string;
-  name?: string;
-  location?: string;
-  marketplace?: "demo" | "neutral" | "auto";
-  startDate?: string;
-};
+/**
+ * Stamp the owner, and keep slugs tenant-safe: if another account already
+ * owns this restaurant-month slug, this run gets a short unique suffix
+ * instead of replacing their campaign.
+ */
+async function claimSlug(campaign: Campaign, owner: string): Promise<void> {
+  campaign.owner_email = owner;
+  const existing = await repo.slugOwner(campaign.slug);
+  if (existing === undefined || existing === owner) return;
+  campaign.slug = `${campaign.slug}-${randomUUID().slice(0, 6)}`;
+}
 
 /** Persist a finished run: restaurant, campaign, and the immutable run log. */
 async function persist(campaign: Campaign, days: CampaignDay[], sales: ParsedSalesSummary, startedAt: number) {
@@ -64,40 +69,51 @@ async function persist(campaign: Campaign, days: CampaignDay[], sales: ParsedSal
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as GenerateBody;
-  const sales = body?.sales;
-  if (!sales || !sales.by_daypart) {
-    return NextResponse.json({ error: "Missing parsed sales data." }, { status: 400 });
+  // Defense in depth: the proxy already requires sign-in for this route.
+  const owner = await getAccountEmail();
+  if (!owner) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+
+  // Each run is ~10 agents + LLM calls + 30 poster renders — cap per account.
+  const limited = await rateLimit(`generate:${owner}`, { limit: 10, windowMs: 60 * 60 * 1000 });
+  if (limited) return limited;
+
+  const parsed = GenerateBodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "That sales file didn't look right — try re-uploading it." },
+      { status: 400 }
+    );
   }
+  const body = parsed.data;
+  const sales = body.sales as ParsedSalesSummary;
 
   const wantsStream = (request.headers.get("accept") || "").includes("text/event-stream");
   const startedAt = Date.now();
   const input = {
     sales,
-    brand: body?.brand,
-    url: body?.url,
-    name: body?.name,
-    location: body?.location,
-    marketplace: body?.marketplace || ("auto" as const),
-    startDate: body?.startDate,
+    brand: body.brand,
+    url: body.url,
+    name: body.name,
+    location: body.location,
+    marketplace: body.marketplace || ("auto" as const),
+    startDate: body.startDate,
   };
 
-  // ---- plain JSON path (demo regeneration, tooling) ----
+  // ---- plain JSON path (tooling) ----
   if (!wantsStream) {
     try {
       const { campaign, days } = await orchestrate(input);
+      await claimSlug(campaign, owner);
       await persist(campaign, days, sales, startedAt);
       return NextResponse.json({
-        campaign: { ...campaign, days },
+        campaign: toPublic({ ...campaign, days }),
         slug: campaign.slug,
         trace: campaign.agent_trace,
       });
     } catch (err) {
+      // Log the detail server-side; never ship internals to the browser.
       console.error("generate error", err);
-      return NextResponse.json(
-        { error: "Generation failed. " + (err instanceof Error ? err.message : "") },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Generation failed — please try again." }, { status: 500 });
     }
   }
 
@@ -118,13 +134,14 @@ export async function POST(request: Request) {
           onEvent: (e: AgentProgressEvent) => send(e),
         });
         send({ type: "persisting" });
+        await claimSlug(campaign, owner);
         await persist(campaign, days, sales, startedAt);
         // Send the slug only — the client fetches the campaign JSON, keeping
         // SSE frames small and the payload path identical to a page load.
         send({ type: "done", slug: campaign.slug });
       } catch (err) {
         console.error("generate stream error", err);
-        send({ type: "error", message: err instanceof Error ? err.message : "Generation failed." });
+        send({ type: "error", message: "Generation failed — please try again." });
       } finally {
         try {
           controller.close();

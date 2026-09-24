@@ -6,6 +6,7 @@ import path from "node:path";
 import type { Campaign, CampaignDay } from "./types";
 import { dowFull, formatShortDate, clamp } from "./utils";
 import { resolveFoodImageUrl } from "./food-images";
+import { safeFetch } from "./safe-fetch";
 
 function esc(s: string): string {
   return s
@@ -29,10 +30,11 @@ async function logoDataUri(url: string | null): Promise<string | null> {
   if (!url) return null;
   if (logoCache.has(url)) return logoCache.get(url)!;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    // Logo URLs come from a brand kit the user can influence — SSRF-safe, 2 MB cap.
+    const res = await safeFetch(url, { timeoutMs: 5000, maxBytes: 2 * 1024 * 1024, accept: "image/*" });
     if (!res.ok) throw new Error("bad");
-    const buf = Buffer.from(await res.arrayBuffer());
-    const png = await sharp(buf).resize(120, 120, { fit: "inside" }).png().toBuffer();
+    const buf = res.body;
+    const png = await sharp(buf, { limitInputPixels: 25_000_000 }).resize(120, 120, { fit: "inside" }).png().toBuffer();
     const uri = `data:image/png;base64,${png.toString("base64")}`;
     logoCache.set(url, uri);
     return uri;
@@ -46,11 +48,13 @@ const bgCache = new Map<string, Buffer | null>();
 async function fetchImage(url: string): Promise<Buffer | null> {
   if (bgCache.has(url)) return bgCache.get(url)!;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    // Hero images can be user-influenced (brand kit) — SSRF-safe, 8 MB cap, and
+    // a pixel limit so a decompression bomb can't exhaust memory in libvips.
+    const res = await safeFetch(url, { timeoutMs: 6000, maxBytes: 8 * 1024 * 1024, accept: "image/*" });
     if (!res.ok) throw new Error("bad");
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = res.body;
     // validate it's a raster image sharp can read
-    await sharp(buf).metadata();
+    await sharp(buf, { limitInputPixels: 50_000_000 }).metadata();
     bgCache.set(url, buf);
     return buf;
   } catch {

@@ -10,6 +10,7 @@ import {
 } from "./utils";
 import { validateProjection } from "./validate";
 import { trainSalesModel } from "./model";
+import { unsupportedNumbers } from "./ai-guardrails";
 
 // ============================================================
 // Swell Assistant — RAG over the owner's own campaign.
@@ -24,7 +25,7 @@ import { trainSalesModel } from "./model";
 
 export type AssistantReply = {
   answer: string;
-  source: "llm" | "rules";
+  source: "llm" | "rules" | "guardrail";
   suggestions: string[];
 };
 
@@ -374,7 +375,13 @@ export async function askAssistant(
   const facts = buildFacts(campaign);
   const { chunks, maxScore } = retrieve(question, facts);
   const llm = await llmAnswer(question, chunks);
-  if (llm) return { answer: llm, source: "llm", suggestions: SUGGESTIONS };
+  if (llm) {
+    // Output guardrail: the model may only state numbers it was handed.
+    const context = chunks.map((f) => f.text).join("\n");
+    const invented = unsupportedNumbers(llm, context);
+    if (invented.length === 0) return { answer: llm, source: "llm", suggestions: SUGGESTIONS };
+    console.warn("assistant: discarded LLM answer with ungrounded numbers", invented);
+  }
   return {
     answer: rulesAnswer(question, campaign, facts, maxScore),
     source: "rules",
