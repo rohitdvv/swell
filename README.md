@@ -20,9 +20,9 @@ runs on deterministic engines and free public APIs.
 |  |  |
 | --- | --- |
 | ![Campaign artifact](docs/artifact.png) | ![Poster gallery](docs/posters.png) |
-| Public artifact — calendar with **live weather per day**, projected revenue, **live conditions** + **10-agent activity** | A poster for **every day**, auto-branded over real food imagery |
-| ![Distribution / ad kit](docs/distribution.png) | ![Brain Console](docs/console.png) |
-| **Distribution** — channel-ready ad kit (Google/Meta/IG/TikTok) + copy | The Brain Console — upload · paste · locate · generate |
+| Campaign artifact — the money question first, calendar with **live weather + events per day** | A poster for **every day**, auto-branded over real food imagery |
+| ![Intelligence — model card](docs/intelligence.png) | ![Distribution / ad kit](docs/distribution.png) |
+| **Intelligence** — 3 models compete, calibrated ranges, “how accurate is this?” | **Distribution** — channel-ready ad kit (Google/Meta/IG/TikTok) + copy |
 
 ---
 
