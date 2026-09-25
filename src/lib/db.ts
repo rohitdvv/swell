@@ -711,6 +711,21 @@ export const repo = {
     return row ? this.getSubscription(row.email as string) : null;
   },
 
+  /** An owner's live campaigns — the input to plan limits (billing/quota.ts). */
+  async ownedCampaigns(
+    ownerEmail: string
+  ): Promise<{ slug: string; restaurant_slug: string; created_at: string }[]> {
+    const rows = await q(
+      `SELECT slug, restaurant_slug, created_at FROM campaigns WHERE owner_email=$1 AND archived=0`,
+      [ownerEmail]
+    );
+    return rows.map((r) => ({
+      slug: r.slug as string,
+      restaurant_slug: r.restaurant_slug as string,
+      created_at: r.created_at as string,
+    }));
+  },
+
   async countCampaignsThisMonth(): Promise<number> {
     const prefix = new Date().toISOString().slice(0, 7);
     const row = await one(`SELECT COUNT(*) c FROM campaigns WHERE substr(created_at,1,7)=$1`, [prefix]);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAccount } from "@/lib/billing/account";
 import { repo } from "@/lib/db";
 import { PLANS, stripeConfigured } from "@/lib/billing/plans";
+import { tierFor, usageOf } from "@/lib/billing/quota";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,8 +11,10 @@ export async function GET() {
   const account = await getAccount();
   const sub = account.subscription;
   const plan = sub ? PLANS[sub.plan] : null;
-  const usedThisMonth = await repo.countCampaignsThisMonth();
-  const limit = plan ? plan.limits.campaignsPerMonth : 0;
+  const tier = tierFor(sub);
+  // Usage is this account's own campaigns (it used to count every account's).
+  const owned = account.email ? await repo.ownedCampaigns(account.email) : [];
+  const usage = usageOf(owned);
   const user = account.email ? await repo.getUser(account.email) : null;
 
   return NextResponse.json({
@@ -19,7 +22,13 @@ export async function GET() {
     user,
     subscription: sub,
     plan,
-    usage: { campaigns: usedThisMonth, limit },
+    tier,
+    usage: {
+      campaigns: usage.campaignsThisMonth,
+      limit: tier.limits.campaignsPerMonth,
+      restaurants: usage.restaurants,
+      restaurantLimit: tier.limits.restaurants,
+    },
     stripeConfigured: stripeConfigured(),
   });
 }

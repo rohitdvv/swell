@@ -15,7 +15,7 @@ export default function SignInPage() {
       <OsNav links={[{ href: "/demo", label: "Sample campaign" }, { href: "/pricing", label: "Pricing" }]} />
       <main className="relative flex flex-1 flex-col items-center justify-center px-4 py-12">
         <h1 className="mb-6 font-display text-3xl">Welcome back</h1>
-        <SignIn appearance={clerkOsAppearance} />
+        <SignIn appearance={clerkOsAppearance} fallbackRedirectUrl="/console" signUpFallbackRedirectUrl="/console" />
       </main>
     </div>
   );

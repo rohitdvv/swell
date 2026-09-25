@@ -7,6 +7,7 @@ import { validateProjection } from "@/lib/validate";
 import { getAccountEmail } from "@/lib/billing/account";
 import { GenerateBodySchema } from "@/lib/schemas";
 import { rateLimit } from "@/lib/rate-limit";
+import { tierFor, canCreate } from "@/lib/billing/quota";
 import { toPublic } from "@/lib/authz";
 import type { ParsedSalesSummary, Campaign, CampaignDay } from "@/lib/types";
 
@@ -68,6 +69,18 @@ async function persist(campaign: Campaign, days: CampaignDay[], sales: ParsedSal
   void prewarmCreatives(days, campaign);
 }
 
+class QuotaError extends Error {}
+
+/** Plan limits, checked after the slug is final and before anything is saved. */
+async function enforceQuota(campaign: Campaign, owner: string): Promise<void> {
+  const [sub, owned] = await Promise.all([
+    repo.getSubscription(owner),
+    repo.ownedCampaigns(owner),
+  ]);
+  const d = canCreate(tierFor(sub), owned, campaign);
+  if (!d.ok) throw new QuotaError(d.message);
+}
+
 export async function POST(request: Request) {
   // Defense in depth: the proxy already requires sign-in for this route.
   const owner = await getAccountEmail();
@@ -104,6 +117,7 @@ export async function POST(request: Request) {
     try {
       const { campaign, days } = await orchestrate(input);
       await claimSlug(campaign, owner);
+      await enforceQuota(campaign, owner);
       await persist(campaign, days, sales, startedAt);
       return NextResponse.json({
         campaign: toPublic({ ...campaign, days }),
@@ -111,6 +125,9 @@ export async function POST(request: Request) {
         trace: campaign.agent_trace,
       });
     } catch (err) {
+      if (err instanceof QuotaError) {
+        return NextResponse.json({ error: err.message, upgrade: "/pricing" }, { status: 402 });
+      }
       // Log the detail server-side; never ship internals to the browser.
       console.error("generate error", err);
       return NextResponse.json({ error: "Generation failed — please try again." }, { status: 500 });
@@ -135,13 +152,18 @@ export async function POST(request: Request) {
         });
         send({ type: "persisting" });
         await claimSlug(campaign, owner);
+        await enforceQuota(campaign, owner);
         await persist(campaign, days, sales, startedAt);
         // Send the slug only — the client fetches the campaign JSON, keeping
         // SSE frames small and the payload path identical to a page load.
         send({ type: "done", slug: campaign.slug });
       } catch (err) {
-        console.error("generate stream error", err);
-        send({ type: "error", message: "Generation failed — please try again." });
+        if (err instanceof QuotaError) {
+          send({ type: "error", message: err.message, upgrade: "/pricing" });
+        } else {
+          console.error("generate stream error", err);
+          send({ type: "error", message: "Generation failed — please try again." });
+        }
       } finally {
         try {
           controller.close();

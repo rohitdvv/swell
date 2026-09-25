@@ -157,23 +157,28 @@ day, captions under 80 chars, uplift a plausible size) and reports what failed.
 sequenceDiagram
   participant U as Owner
   participant K as Clerk
+  participant C as /console
+  participant G as /api/generate
   participant P as /pricing
   participant S as Stripe
   participant DB as Postgres
-  participant C as /console
 
   U->>K: Sign up / in (Google or email)
-  K-->>U: Clerk session
-  U->>P: Choose plan (monthly/annual)
-  alt Stripe key configured
-    P->>S: Checkout session (client_reference_id = email)
-    S-->>DB: webhook → subscriptions.upsert
-  else demo mode (no key)
-    P->>DB: subscriptions.upsert (mode: demo)
+  K-->>C: straight to the console (Free tier, no card)
+  U->>G: build a campaign
+  G->>DB: owner's campaigns + subscription
+  alt within plan limits (or regenerating one you own)
+    G-->>U: campaign saved, owned by U
+  else over the limit
+    G-->>U: 402 + upgrade link
+    U->>P: choose plan (monthly/annual)
+    alt Stripe key configured
+      P->>S: Checkout session (client_reference_id = email)
+      S-->>DB: webhook → subscriptions.upsert
+    else demo mode (no key)
+      P->>DB: subscriptions.upsert (mode: demo)
+    end
   end
-  U->>C: Open console
-  C->>DB: Clerk email → user row (mirrored) + active subscription?
-  C-->>U: gated: signed out → /sign-in · unsubscribed → /pricing · ok → Console
 ```
 
 - **Identity**: **Clerk** (`@clerk/nextjs`), Google + email. `src/proxy.ts` protects only
@@ -184,8 +189,10 @@ sequenceDiagram
   `users` row on first sight (`src/lib/billing/account.ts`).
 - **Binding**: `/api/billing/bind` refuses a Checkout session whose `client_reference_id`
   is not the signed-in email, and requires `status === "complete"`.
-- **Plans**: Starter/Pro/Agency with limits (restaurants, campaigns/month, ad kit,
-  auto-publish, white-label) in `src/lib/billing/plans.ts`; usage metered from the DB.
+- **Plans**: Free (1 restaurant, 1 campaign/month) then Starter/Pro/Agency with limits
+  (restaurants, campaigns/month, ad kit, auto-publish, white-label) in `src/lib/billing/plans.ts`.
+  `src/lib/billing/quota.ts` decides, per owner, whether a new campaign may be saved;
+  regenerating a campaign you already own never counts. Enforced in `/api/generate` (402).
 
 ## RAG assistant ("Ask Swell")
 
@@ -296,12 +303,12 @@ or per IP, per window.
 |---|---|---|---|---|
 | `/sign-in` `/sign-up` | — | public | Clerk | Clerk-hosted auth (Google + email) |
 | `/api/billing/checkout` | POST | user | — | Stripe Checkout (or instant demo sub) |
-| `/api/billing/me` | GET | user | — | user + subscription + plan + usage |
+| `/api/billing/me` | GET | user | — | user + subscription + tier + this account's usage |
 | `/api/billing/portal · bind` | POST | user | — | Stripe portal / post-checkout bind (refuses others' sessions) |
 | `/api/stripe/webhook` | POST | Stripe signature | — | subscription lifecycle sync |
 | `/api/parse-csv` | POST | user | 40/h | CSV/XLSX ≤ 15 MB → `ParsedSalesSummary` (rejects <14 days) |
 | `/api/brand-kit` | POST | user | 30/h | URL → `BrandKit` via SSRF-safe fetch |
-| `/api/generate` | POST | user | 10/h | zod-validated orchestration → campaign owned by caller |
+| `/api/generate` | POST | user | 10/h + plan quota | zod-validated orchestration → campaign owned by caller; 402 over plan limits |
 | `/api/campaigns` | GET | user | — | **your** campaigns only |
 | `/api/campaigns/[slug]` | GET · DELETE | viewer · owner | — | read / delete |
 | `/api/campaigns/[slug]/action` | POST | owner | — | activate · pause · publish · archive |

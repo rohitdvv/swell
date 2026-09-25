@@ -27,76 +27,49 @@ import { Button, Badge, Card, Field, Input, Segmented } from "@/components/ui";
 import { CampaignBoard } from "@/components/campaign-board";
 import { toast } from "@/components/toaster";
 import { osClass, OS } from "@/components/os-theme";
-import { OsNav } from "@/components/os-nav";
 import { UserButton } from "@clerk/nextjs";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign, CampaignRun } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
 
-type Gate = "loading" | "unsubscribed" | "ok";
+type PlanInfo = { id: string; name: string; used: number; limit: number };
 
 export default function ConsolePage() {
-  // Clerk middleware guarantees a signed-in user here; we only gate on plan.
-  const [gate, setGate] = React.useState<Gate>("loading");
-  const [userName, setUserName] = React.useState<string>("");
+  // Clerk middleware guarantees a signed-in user here. There is no paywall:
+  // accounts without a plan build on the Free tier, and the server enforces
+  // every plan's limits (api/generate).
+  const [plan, setPlan] = React.useState<PlanInfo | null | undefined>(undefined);
 
   React.useEffect(() => {
     fetch("/api/billing/me")
       .then((r) => r.json())
-      .then((me) => {
-        setUserName(me?.user?.name ?? "");
-        setGate(me?.subscription && me.subscription.status === "active" ? "ok" : "unsubscribed");
-      })
-      .catch(() => setGate("unsubscribed"));
+      .then((me) =>
+        setPlan(
+          me?.tier
+            ? { id: me.tier.id, name: me.tier.name, used: me.usage?.campaigns ?? 0, limit: me.usage?.limit ?? 1 }
+            : null
+        )
+      )
+      .catch(() => setPlan(null));
   }, []);
 
-  if (gate === "loading") {
+  if (plan === undefined) {
     return (
       <div
         className={osClass("flex min-h-screen items-center justify-center gap-2")}
         style={{ background: OS.bg, color: OS.muted }}
       >
-        <Loader2 className="size-4 animate-spin" /> Checking your plan…
+        <Loader2 className="size-4 animate-spin" /> Opening your console…
       </div>
     );
   }
 
-  if (gate === "unsubscribed") {
-    return (
-      <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
-        <OsNav links={[{ href: "/demo", label: "Sample campaign" }, { href: "/pricing", label: "Pricing" }]} />
-        <div className="flex min-h-[calc(100vh-64px)] items-center justify-center px-4">
-          <div className="w-full max-w-sm rounded-lg border p-8 text-center" style={{ borderColor: OS.line2, background: OS.panel }}>
-            <div
-              className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg"
-              style={{ background: OS.amber, color: OS.bg }}
-            >
-              <Lock className="size-5" />
-            </div>
-            <div className="font-display text-2xl">
-              Swell <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
-            </div>
-            <p className="mt-3 text-sm" style={{ color: OS.muted }}>
-              {userName ? `Hi ${userName.split(" ")[0]} — one` : "One"} more step: pick a plan to unlock the console.
-            </p>
-            <Link
-              href="/pricing"
-              className="mt-5 flex h-11 w-full items-center justify-center gap-1.5 rounded text-[14px] font-semibold transition hover:brightness-110"
-              style={{ background: OS.amber, color: OS.bg }}
-            >
-              Choose a plan <ArrowRight className="size-4" />
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return <Console />;
+  return <Console plan={plan} />;
 }
 
 type Phase = "input" | "generating" | "result";
 
-function Console() {
+function Console({ plan }: { plan: PlanInfo | null }) {
+  const [quota, setQuota] = React.useState<string | null>(null);
   const [sales, setSales] = React.useState<ParsedSalesSummary | null>(null);
   const [salesMeta, setSalesMeta] = React.useState<{ name: string; filename: string } | null>(null);
   const [url, setUrl] = React.useState("");
@@ -158,13 +131,14 @@ function Console() {
         body: JSON.stringify({ sample: true }),
       });
       const data = await res.json();
+      if (!res.ok || !data.sales) throw new Error(data.error);
       setSales(data.sales);
       setSalesMeta({ name: data.meta.name, filename: data.meta.filename });
       setName(data.meta.name);
       if (data.meta.location) setLocation(data.meta.location);
       toast("Loaded Osteria Lume sample.", "success");
-    } catch {
-      toast("Could not load sample.", "error");
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : "Could not load sample.", "error");
     } finally {
       setParsing(false);
     }
@@ -172,6 +146,7 @@ function Console() {
 
   async function generate() {
     if (!sales) return;
+    setQuota(null);
     setLive({});
     setPhase("generating");
     try {
@@ -184,6 +159,7 @@ function Console() {
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
+        if (data.upgrade) setQuota(data.error);
         throw new Error(data.error || `Generation failed (${res.status}).`);
       }
 
@@ -201,7 +177,7 @@ function Console() {
         for (const frame of frames) {
           const line = frame.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
-          let evt: { type: string; agent?: string; role?: string; detail?: string; ms?: number; slug?: string; message?: string };
+          let evt: { type: string; agent?: string; role?: string; detail?: string; ms?: number; slug?: string; message?: string; upgrade?: string };
           try {
             evt = JSON.parse(line.slice(6));
           } catch {
@@ -214,6 +190,7 @@ function Console() {
           } else if (evt.type === "done" && evt.slug) {
             doneSlug = evt.slug;
           } else if (evt.type === "error") {
+            if (evt.upgrade) setQuota(evt.message ?? null);
             throw new Error(evt.message || "Generation failed.");
           }
         }
@@ -237,11 +214,12 @@ function Console() {
     if (!result) return;
     setPublishing(true);
     try {
-      await fetch(`/api/campaigns/${result.slug}/action`, {
+      const res = await fetch(`/api/campaigns/${result.slug}/action`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "publish" }),
       });
+      if (!res.ok) throw new Error();
       toast("Published. Public URL is live.", "success");
       loadCampaigns();
     } catch {
@@ -307,6 +285,24 @@ function Console() {
                 Three inputs in. A 30-day branded plan out. One tap to publish.
               </p>
             </div>
+
+            {plan && <PlanBar plan={plan} />}
+            {quota && (
+              <div
+                className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm"
+                style={{ borderColor: "rgba(232,163,61,0.45)", background: "rgba(232,163,61,0.08)" }}
+              >
+                <Lock className="size-4 shrink-0" style={{ color: OS.amber }} />
+                <span className="min-w-0 flex-1">{quota}</span>
+                <Link
+                  href="/pricing"
+                  className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-[13px] font-semibold"
+                  style={{ background: OS.amber, color: OS.bg }}
+                >
+                  See plans <ArrowRight className="size-3.5" />
+                </Link>
+              </div>
+            )}
 
             {/* Step 1 — sales */}
             <StepCard
@@ -814,6 +810,33 @@ function CampaignList({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function PlanBar({ plan }: { plan: PlanInfo }) {
+  const unlimited = plan.limit === -1;
+  const full = !unlimited && plan.used >= plan.limit;
+  return (
+    <div
+      className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-2.5"
+      style={{ borderColor: OS.line2, background: OS.panel }}
+    >
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: OS.amber }}>
+        {plan.name} plan
+      </span>
+      <span className="text-[13px]" style={{ color: OS.muted }}>
+        {unlimited
+          ? "Unlimited campaigns"
+          : `${plan.used} of ${plan.limit} campaign${plan.limit === 1 ? "" : "s"} this month`}
+        {plan.id === "free" && !full && " · no card needed · regenerate any time"}
+        {full && " · regenerating an existing campaign is still free"}
+      </span>
+      {plan.id === "free" && (
+        <Link href="/pricing" className="ml-auto text-[13px] font-semibold" style={{ color: OS.amber }}>
+          Upgrade
+        </Link>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Sparkles, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { Check, Sparkles, ShieldCheck, ArrowRight } from "lucide-react";
 import { osClass, OS } from "@/components/os-theme";
 import { OsNav } from "@/components/os-nav";
 import { toast } from "@/components/toaster";
@@ -172,6 +173,29 @@ export default function PricingPage() {
                 </div>
               );
             })}
+          </div>
+
+          <div
+            className="mt-5 flex flex-col items-start gap-3 rounded-lg border px-6 py-5 sm:flex-row sm:items-center"
+            style={{ borderColor: OS.line2, background: OS.panel }}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[17px] font-semibold">Free</span>
+                <span className="font-display text-2xl">$0</span>
+              </div>
+              <p className="mt-1 text-sm" style={{ color: OS.muted }}>
+                1 restaurant · 1 campaign a month, regenerate it as often as you like · live weather +
+                events brain · 30 branded posters · shareable URL. No card.
+              </p>
+            </div>
+            <Link
+              href="/console"
+              className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded border px-5 text-[14px] font-semibold transition hover:border-current"
+              style={{ borderColor: "rgba(237,232,220,0.25)", color: OS.fg }}
+            >
+              Start free <ArrowRight className="size-4" />
+            </Link>
           </div>
 
           <div className="mt-10 flex items-center justify-center gap-2 font-mono text-[10px] tracking-[0.08em]" style={{ color: OS.subtle }}>

@@ -160,15 +160,24 @@ export default function AccountPage() {
             <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-surface-2">
               <CreditCard className="size-5 text-fg-subtle" />
             </div>
-            <div className="text-lg font-semibold">No active plan</div>
+            <div className="text-lg font-semibold">You&apos;re on Swell Free</div>
             <p className="mx-auto mt-1 max-w-sm text-sm text-fg-muted">
-              Pick a plan to unlock the Swell brain, the Ad Kit and auto-publishing.
+              {me ? `${me.usage.campaigns} of ${me.usage.limit} campaign this month. ` : ""}
+              Regenerate it as often as you like. Upgrade for more restaurants, more campaigns, the Ad
+              Kit and auto-publishing.
             </p>
-            <Link href="/pricing">
-              <Button className="mt-5" size="lg">
-                See plans <ArrowRight className="size-4" />
-              </Button>
-            </Link>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Link href="/console">
+                <Button size="lg">
+                  Build a campaign <ArrowRight className="size-4" />
+                </Button>
+              </Link>
+              <Link href="/pricing">
+                <Button variant="outline" size="lg">
+                  See plans
+                </Button>
+              </Link>
+            </div>
           </Card>
         )}
       </main>

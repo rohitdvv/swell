@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type {
   ParsedSalesSummary,
   BrandKit,
-  MarketplaceSignals,
   Campaign,
   CampaignDay,
   AgentEvent,

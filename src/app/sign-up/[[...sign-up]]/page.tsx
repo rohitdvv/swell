@@ -17,9 +17,11 @@ export default function SignUpPage() {
       <main className="relative flex flex-1 flex-col items-center justify-center px-4 py-12">
         <h1 className="mb-1 font-display text-3xl">Create your account</h1>
         <p className="mb-6 text-sm" style={{ color: OS.muted }}>
-          Sign up, pick a plan, and generate your first campaign in minutes.
+          Free to start — no card. Your first campaign is about a minute away.
         </p>
-        <SignUp appearance={clerkOsAppearance} />
+        {/* Straight to the builder. Beats NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+            (which older deploys set to /pricing); a redirect_url from a protected page still wins. */}
+        <SignUp appearance={clerkOsAppearance} fallbackRedirectUrl="/console" signInFallbackRedirectUrl="/console" />
         <ul className="mt-6 space-y-1.5">
           {[
             "30-day campaign from your real sales",

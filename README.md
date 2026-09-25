@@ -29,25 +29,27 @@ runs on deterministic engines and free public APIs.
 > 📐 **Deep dive: [ARCHITECTURE.md](ARCHITECTURE.md)** — system diagrams, the 10-agent
 > pipeline, revenue model math, auth/billing flow, data model, and API surface.
 
-## The flow (enterprise)
+## The flow
 
-**Sign up → sign in → choose a plan → pay (Stripe / demo) → Console.**
-**Clerk** handles identity (Google or email) at `/sign-up` and `/sign-in`, `/pricing`
-starts Stripe checkout for the signed-in account, and `/console` is gated: signed-out
-visitors are redirected to sign-in, signed-in users without an active subscription are
-sent to pick a plan. The landing page, `/pricing`, the live `/demo` (free for everyone,
-read-only) and every **published** campaign URL stay public. Drafts are private to their owner.
+**Sign up → Console → build a campaign → publish.** No card, no plan picker in the way.
+**Clerk** handles identity (Google or email) at `/sign-up` and `/sign-in`, and drops new
+accounts straight into `/console`. Every account starts on **Free** (1 restaurant, 1 campaign a
+month, regenerate as often as you like); `/pricing` upgrades to Starter / Pro / Agency via
+Stripe. Plan limits are enforced on the server (`src/lib/billing/quota.ts` → `/api/generate`
+returns 402 with an upgrade link), not just hidden in the UI. The landing page, `/pricing`,
+the live `/demo` (read-only) and every **published** campaign URL stay public. Drafts are
+private to their owner.
 
 ## The three pieces
 
 | Piece | Route | What it is |
 |---|---|---|
-| **Brain Console** | `/console` | Gated by account + active subscription. Upload CSV → paste URL + location → generate → edit any of the 30 deals → publish. |
+| **Brain Console** | `/console` | Any signed-in account (Free tier or a plan). Upload CSV → paste URL + location → generate → edit any of the 30 deals → publish. |
 | **The Generator** | `/api/generate` | The brain. Parses sales, extracts the brand kit, reads marketplace demand, composes a 30-day plan, writes copy, renders creative, persists to the DB. |
 | **Campaign Artifact** | `/c/[slug]` | The deliverable. Calendar + **Intelligence** (forecast with calibrated range, model card) + **Report** + **Posters** + **Distribution** tabs, Activate, inline edit (owner only). OG/Twitter share cards. Public once published. |
 | **Assistant** | floating "Ask Swell" | RAG chatbot on every campaign — answers the owner's questions ("why is Tuesday 30% off?") grounded in *their* campaign data, behind input and output guardrails. |
 
-Start at **`/`** → **Get started** (sign up) → pick a plan → **`/console`**.
+Start at **`/`** → **Run it on your data** (sign up) → **`/console`**.
 
 ---
 
@@ -60,14 +62,14 @@ npm test             # model calibration, security & guardrail suites (Vitest)
 ```
 
 Put the two Clerk keys in `.env.local` (see [Environment](#environment)). Then open `/demo`
-for a finished campaign, or sign up at `/sign-up`, pick any plan (instant demo mode without a
-Stripe key), and in the Console click **“Load the Osteria Lume sample”** — a realistic 45-day
+for a finished campaign, or sign up at `/sign-up` (you land in the Console on the Free tier),
+and click **“Load the Osteria Lume sample”** — a realistic 45-day
 NYC trattoria export is parsed live and turned into a full campaign. No CSV or LLM key required.
 
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 111 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts |
+| `npm test` | 120 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -267,8 +269,8 @@ about the rest.**
 
 ## Subscriptions (`/pricing`, `/account`)
 
-Swell ships with a working subscription layer — **Starter / Pro / Agency**, monthly or
-annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-label).
+Swell ships with a working subscription layer — **Free**, then **Starter / Pro / Agency**,
+monthly or annual, with plan limits (restaurants, campaigns, Ad Kit, auto-publish, white-label).
 
 - **Checkout** uses **Stripe** (`src/lib/billing/*`). A Stripe **test key** runs real
   Checkout with no real charges; prices are created inline so no dashboard setup is needed.
@@ -377,5 +379,6 @@ src/
     assistant-widget.tsx os-nav.tsx landing/ ui.tsx modal.tsx toaster.tsx …
 test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
+  quota.test.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```
