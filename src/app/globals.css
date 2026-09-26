@@ -369,30 +369,31 @@
 }
 
 /* ============================================================
-   Swell OS — the campaign artifact skin (from the Claude Design
-   comp "Swell Artifact.dc.html"). One committed dark editorial
-   surface: near-black ground, cream type, amber accent, mint
-   signal, mono micro-labels. Redefining the semantic tokens here
+   Swell OS — one warm, light, food-first surface for the whole
+   product: paper ground, warm ink type, a burnt-tomato accent
+   (AA contrast for both text and white-on-accent buttons) and a
+   deep herb green for money. Redefining the semantic tokens here
    re-skins every themed component (cards, buttons, charts,
    modals) that renders inside it.
    ============================================================ */
 .swell-os {
-  --bg: #0a0c0b;
-  --bg-subtle: #0d100e;
-  --surface: #101312;
-  --surface-2: #0d100e;
-  --border: rgba(237, 232, 220, 0.1);
-  --border-strong: rgba(237, 232, 220, 0.22);
-  --fg: #ede8dc;
-  --fg-muted: #9a968a;
-  --fg-subtle: #6b685e;
-  --shadow-color: 0 0 0;
-  --os-amber: #e8a33d;
-  --os-amber-bright: #f2b655;
-  --os-mint: #7fd1ae;
-  --os-violet: #b9a8e8;
-  --os-line: rgba(237, 232, 220, 0.08);
-  /* Comp typography: Newsreader display, Schibsted Grotesk text,
+  --bg: #fbf8f3;
+  --bg-subtle: #f5efe5;
+  --surface: #ffffff;
+  --surface-2: #f6f1e8;
+  --border: rgba(28, 25, 23, 0.1);
+  --border-strong: rgba(28, 25, 23, 0.18);
+  --fg: #1c1917;
+  --fg-muted: #57534e;
+  --fg-subtle: #857f76;
+  --shadow-color: 28 25 23;
+  --os-amber: #c84b14;
+  --os-amber-bright: #e0621f;
+  --os-mint: #16784d;
+  --os-violet: #5b4bc4;
+  --os-rust: #b42318;
+  --os-line: rgba(28, 25, 23, 0.08);
+  /* Typography: Newsreader display, Schibsted Grotesk text,
      Spline Sans Mono labels — wired to next/font variables. */
   --font-display: var(--font-os-serif), Georgia, serif;
   --font-sans: var(--font-os-sans), ui-sans-serif, system-ui, sans-serif;
@@ -400,11 +401,11 @@
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
-  color-scheme: dark;
+  color-scheme: light;
 }
 .swell-os ::selection {
   background: var(--os-amber);
-  color: #0a0c0b;
+  color: #ffffff;
 }
 /* Mono micro-label — the comp's signature. */
 .os-label {

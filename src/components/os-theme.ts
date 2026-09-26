@@ -19,24 +19,29 @@ export function osClass(extra?: string) {
   return cn("swell-os", osSerif.variable, osSans.variable, osMono.variable, extra);
 }
 
-/** Comp palette, for inline styles where a CSS var would be awkward. */
+/**
+ * Palette for inline styles. Each entry points at a `.swell-os` CSS token, so
+ * the whole product re-skins from globals.css. (Never append hex alpha to
+ * these — they are var() references, not hex colors.)
+ */
 export const OS = {
-  bg: "#0A0C0B",
-  bgAlt: "#0D100E",
-  panel: "#101312",
-  fg: "#EDE8DC",
-  muted: "#9A968A",
-  subtle: "#6B685E",
-  amber: "#E8A33D",
-  amberBright: "#F2B655",
-  mint: "#7FD1AE",
-  rust: "#E4572E",
-  line: "rgba(237,232,220,0.08)",
-  line2: "rgba(237,232,220,0.12)",
-  paper: "#F4F1E8",
-  paperCard: "#FBF9F3",
-  ink: "#191813",
-  inkMuted: "#6B675C",
-  inkSubtle: "#8A8578",
-  bronze: "#B4762A",
+  bg: "var(--bg)",
+  bgAlt: "var(--bg-subtle)",
+  panel: "var(--surface)",
+  fg: "var(--fg)",
+  muted: "var(--fg-muted)",
+  subtle: "var(--fg-subtle)",
+  amber: "var(--os-amber)",
+  amberBright: "var(--os-amber-bright)",
+  mint: "var(--os-mint)",
+  rust: "var(--os-rust)",
+  line: "var(--os-line)",
+  line2: "var(--border)",
+  // A contrasting ink band for the money chapter on the landing page.
+  paper: "#1C1917",
+  paperCard: "#26221E",
+  ink: "#FBF8F3",
+  inkMuted: "#C9C2B8",
+  inkSubtle: "#9A9288",
+  bronze: "#F0A35E",
 } as const;

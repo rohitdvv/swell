@@ -11,17 +11,32 @@ import "server-only";
 //      Cacio e Pepe and Bucatini don't share one stock photo
 // Results are cached per query for the life of the process.
 
-type Family = { re: RegExp; meal?: { category?: string; search?: string }; drink?: string };
+type Family = {
+  re: RegExp;
+  meal?: { category?: string; search?: string };
+  drink?: string;
+  /** TheMealDB files odd things under a category ("Grilled Mac and Cheese Sandwich" is Pasta). */
+  exclude?: RegExp;
+};
 
 const FAMILIES: Family[] = [
   { re: /pizza|margherita|marinara|calzone/i, meal: { search: "pizza" } },
-  { re: /tiramis|dessert|gelato|cannoli|panna|cake|torta|affogato/i, meal: { category: "Dessert" } },
+  {
+    re: /tiramis|dessert|gelato|cannoli|panna|cake|torta|affogato/i,
+    meal: { category: "Dessert" },
+    exclude: /pie|pudding|crumble|flapjack|jam|parkin|bakewell|treacle/i,
+  },
   {
     re: /(cacio|bucatini|tagliatelle|amatriciana|carbonara|pasta|ragu|ragù|spaghetti|penne|lasagn|gnocchi|linguine|fettuc|rigatoni|pappardelle|orecchiette)/i,
     meal: { category: "Pasta" },
+    exclude: /sandwich|pudding|pie|mac(aroni)? and cheese|salad|syrian/i,
   },
   { re: /(burrata|caesar|salad|insalata|caprese|greens)/i, meal: { search: "salad" } },
-  { re: /(branzino|salmon|fish|sea bass|tuna|shrimp|prawn|calamari|cod|halibut)/i, meal: { category: "Seafood" } },
+  {
+    re: /(branzino|salmon|fish|sea bass|tuna|shrimp|prawn|calamari|cod|halibut)/i,
+    meal: { category: "Seafood" },
+    exclude: /pie|cake|curry|soup|kedgeree|sushi|stew/i,
+  },
   { re: /(arancini|risotto|rice|paella)/i, meal: { search: "risotto" } },
   { re: /(focaccia|bread|bruschetta|garlic|toast|crostini)/i, meal: { category: "Side" } },
   { re: /(steak|beef|bistecca|ribeye|burger|short rib)/i, meal: { category: "Beef" } },
@@ -41,7 +56,8 @@ const FAMILIES: Family[] = [
   { re: /(espresso|coffee|latte|cappuccino)/i, drink: "coffee" },
 ];
 
-const cache = new Map<string, string[]>();
+type Photo = { name: string; url: string };
+const cache = new Map<string, Photo[]>();
 
 async function getJson(url: string): Promise<unknown> {
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
@@ -49,10 +65,10 @@ async function getJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-async function thumbs(key: string, url: string, pick: (d: unknown) => string[]): Promise<string[]> {
+async function thumbs(key: string, url: string, pick: (d: unknown) => Photo[]): Promise<Photo[]> {
   if (cache.has(key)) return cache.get(key)!;
   try {
-    const list = pick(await getJson(url)).filter(Boolean);
+    const list = pick(await getJson(url)).filter((p) => p.url);
     cache.set(key, list);
     return list;
   } catch {
@@ -63,10 +79,12 @@ async function thumbs(key: string, url: string, pick: (d: unknown) => string[]):
 
 const MEALDB = "https://www.themealdb.com/api/json/v1/1";
 const COCKTAILDB = "https://www.thecocktaildb.com/api/json/v1/1";
-type Meals = { meals?: Array<{ strMealThumb?: string }> | null };
-type Drinks = { drinks?: Array<{ strDrinkThumb?: string }> | null };
-const mealThumbs = (d: unknown) => ((d as Meals).meals ?? []).map((m) => m.strMealThumb ?? "");
-const drinkThumbs = (d: unknown) => ((d as Drinks).drinks ?? []).map((m) => m.strDrinkThumb ?? "");
+type Meals = { meals?: Array<{ strMeal?: string; strMealThumb?: string }> | null };
+type Drinks = { drinks?: Array<{ strDrink?: string; strDrinkThumb?: string }> | null };
+const mealThumbs = (d: unknown): Photo[] =>
+  ((d as Meals).meals ?? []).map((m) => ({ name: m.strMeal ?? "", url: m.strMealThumb ?? "" }));
+const drinkThumbs = (d: unknown): Photo[] =>
+  ((d as Drinks).drinks ?? []).map((m) => ({ name: m.strDrink ?? "", url: m.strDrinkThumb ?? "" }));
 
 /** Stable, well-spread index for a string (FNV-1a). */
 export function stableIndex(s: string, n: number): number {
@@ -85,20 +103,21 @@ export async function resolveFoodImageUrl(item: string): Promise<string | null> 
   // Drinks: TheCocktailDB by name, then the family query.
   if (family?.drink) {
     const exact = await thumbs(`d:${name}`, `${COCKTAILDB}/search.php?s=${encodeURIComponent(name)}`, drinkThumbs);
-    if (exact.length) return exact[0];
+    if (exact.length) return exact[0].url;
     const fam = await thumbs(`d:${family.drink}`, `${COCKTAILDB}/search.php?s=${encodeURIComponent(family.drink)}`, drinkThumbs);
-    return fam.length ? fam[stableIndex(name, fam.length)] : null;
+    return fam.length ? fam[stableIndex(name, fam.length)].url : null;
   }
 
   // 1. The dish itself.
   const exact = await thumbs(`m:${name}`, `${MEALDB}/search.php?s=${encodeURIComponent(name)}`, mealThumbs);
-  if (exact.length) return exact[0];
+  if (exact.length) return exact[0].url;
   if (!family?.meal) return null;
 
   // 2. A dish from its family, spread by name so siblings differ.
   const { category, search } = family.meal;
-  const fam = category
+  const all = category
     ? await thumbs(`c:${category}`, `${MEALDB}/filter.php?c=${encodeURIComponent(category)}`, mealThumbs)
     : await thumbs(`m:${search}`, `${MEALDB}/search.php?s=${encodeURIComponent(search!)}`, mealThumbs);
-  return fam.length ? fam[stableIndex(name, fam.length)] : null;
+  const fam = family.exclude ? all.filter((p) => !family.exclude!.test(p.name)) : all;
+  return fam.length ? fam[stableIndex(name, fam.length)].url : null;
 }

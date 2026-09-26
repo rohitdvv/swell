@@ -145,7 +145,7 @@ export function CampaignBoard({
         className="sticky top-0 z-40 flex h-[60px] items-center gap-4 border-b px-5 sm:px-10"
         style={{
           borderColor: "var(--os-line)",
-          background: "rgba(10,12,11,0.85)",
+          background: "rgba(251,248,243,0.86)",
           backdropFilter: "blur(14px)",
         }}
       >
@@ -175,7 +175,7 @@ export function CampaignBoard({
               onClick={activate}
               disabled={activating}
               className="flex h-[34px] items-center gap-1.5 rounded px-4 text-[12.5px] font-semibold transition hover:brightness-110 disabled:opacity-60"
-              style={{ background: "var(--os-amber)", color: "#0A0C0B" }}
+              style={{ background: "var(--os-amber)", color: "#FFFFFF" }}
             >
               {activating ? (
                 <Spinner className="size-3.5" />
@@ -385,12 +385,12 @@ function MoneyBar({ label, value, max, mint }: { label: string; value: number; m
       <div className="mt-0.5 font-display text-xl" style={mint ? { color: "var(--os-mint)" } : undefined}>
         {formatCompactCurrency(value)}
       </div>
-      <div className="mt-1.5 h-[5px] rounded-[3px]" style={{ background: "rgba(237,232,220,0.12)" }}>
+      <div className="mt-1.5 h-[5px] rounded-[3px]" style={{ background: "rgba(28,25,23,0.12)" }}>
         <div
           className="h-full rounded-[3px]"
           style={{
             width: `${Math.max((value / max) * 100, 4)}%`,
-            background: mint ? "var(--os-mint)" : "rgba(237,232,220,0.28)",
+            background: mint ? "var(--os-mint)" : "rgba(28,25,23,0.28)",
           }}
         />
       </div>
@@ -1237,8 +1237,9 @@ function PosterCard({
           className="aspect-[4/5] w-full object-cover transition group-hover:scale-[1.02]"
         />
       </button>
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-2">
-        <span className="rounded-md bg-black/45 px-1.5 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+      {/* Sits on the photo band between the headline and the caption, so it never covers poster text. */}
+      <div className="pointer-events-none absolute left-2 top-[58%]">
+        <span className="rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
           {dowShort(day.date)} {parseLocalDate(day.date).getDate()}
         </span>
       </div>

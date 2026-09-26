@@ -69,7 +69,7 @@ NYC trattoria export is parsed live and turned into a full campaign. No CSV or L
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 120 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas |
+| `npm test` | 128 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -249,6 +249,26 @@ regenerates anything an LLM produces that fails.
 
 `GET /api/health` reports database and LLM status for uptime monitors (no secrets).
 
+## Proof — the part a chatbot can't do
+
+After a campaign runs, the owner uploads the same POS export on the campaign's **Proof** tab.
+Swell compares each campaign day with what the forecasting model — trained only on sales
+*before* the campaign — says would have happened without it (the counterfactual), and reports
+the lift with an 80% range built from the model's calibrated per-day intervals. It also counts
+each promo dish inside its window against the same weekday before. Verdict: **proven**,
+**promising**, **no lift** or **too early**. On simulated restaurants with no real effect, the
+range contained zero 48/60 times and wrongly said "proven" 5/60 (`test/proof.test.ts`).
+Code: `src/lib/proof.ts`, `api/campaigns/[slug]/proof`, `components/proof-panel.tsx`.
+
+**What the number is worth.** The money card translates the slow-hour lift into profit a year
+and its share of a typical restaurant's annual profit (`src/lib/value.ts`; assumptions: 60% of
+an extra slow-hour dollar kept after food cost, 5% typical net margin — shown on hover).
+
+**Posting without linking accounts.** Distribution leads with "Post today's special": on a
+phone, Share hands the poster + caption to Instagram, Facebook or WhatsApp through the native
+share sheet; on desktop it downloads the poster and copies the caption. Paid ads are an
+optional "Boost" section.
+
 ## How accurate is the forecast?
 
 No forecast of a restaurant's sales is 100% accurate — weather, a local event or a viral post
@@ -369,6 +389,8 @@ src/
     copy.ts                  ← Copywriter agent + caption guardrail
     creative.ts food-images.ts ← Creative agent (posters + ad kit)
     assistant.ts llm.ts      ← RAG assistant · LLM client (provider chain, Prompt Guard)
+    proof.ts value.ts        ← measured lift vs counterfactual · profit framing
+    food-images.ts           ← per-dish photos (TheMealDB) + drinks (TheCocktailDB)
     authz.ts                 ← who can view / edit a campaign (the only place)
     safe-fetch.ts            ← SSRF-safe fetch for user URLs
     schemas.ts rate-limit.ts ai-guardrails.ts ← validation · abuse limits · AI guardrails
@@ -379,6 +401,6 @@ src/
     assistant-widget.tsx os-nav.tsx landing/ ui.tsx modal.tsx toaster.tsx …
 test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
-  quota.test.ts
+  quota.test.ts proof.test.ts value.test.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

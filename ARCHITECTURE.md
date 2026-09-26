@@ -315,6 +315,7 @@ or per IP, per window.
 | `/api/campaigns/[slug]/calendar` | GET | viewer | — | `.ics` feed |
 | `/api/campaign-days/[id]` | PATCH | owner | — | inline edit; caption guardrail; projections recompute server-side |
 | `/api/creative/[file]` | GET | viewer | 400/min/IP | poster/ad PNG (`?ratio=`) |
+| `/api/campaigns/[slug]/proof` | POST | owner | 20/h | upload post-campaign export → measured lift (Proof) |
 | `/api/runs` | GET | user | — | this account's generation history |
 | `/api/assistant` | POST | viewer | per user + IP | guarded, grounded Q&A over one campaign |
 | `/api/health` | GET | public | 60/min/IP | database + LLM status, commit SHA (no secrets) |
@@ -345,6 +346,20 @@ All date math is UTC. `test/model.test.ts` checks recovery of known structure, b
 naive benchmark, out-of-time and Monte-Carlo interval coverage, parsimony, non-negativity and
 timezone invariance.
 
+## Proof (`src/lib/proof.ts`)
+
+```
+POS export after the campaign ─▶ daily totals + item lines (date, daypart, item, qty)
+model trained on the ORIGINAL upload ─▶ counterfactual per campaign day + 80% interval
+lift = Σ(actual − counterfactual)  ·  80% range = lift ± 1.28·√Σσ²  (σ from each day's band)
+promo windows: units of the dish in its daypart vs mean of same weekday + window pre-campaign
+verdict: < 7 days → too early · low80 > 0 → proven · lift > 0 → promising · else no lift
+```
+
+The uploaded file never trains the model it is judged against. Owner-only
+(`POST /api/campaigns/[slug]/proof`, 20/h), stored as `campaigns.proof_json`, shown on the
+Proof tab and the money card.
+
 ## Security model
 
 - **AuthZ** — `lib/authz.ts` is the only place access is decided (`canView`, `canEdit`,
@@ -358,7 +373,7 @@ timezone invariance.
 - **Abuse** — Postgres fixed-window rate limits per user / IP on generate, upload, brand-kit,
   assistant, creative and health.
 - Tests: `test/security.test.ts`, `test/ai-guardrails.test.ts`, `test/ingest.test.ts`,
-  `test/poster-fonts.test.ts`.
+  `test/poster-fonts.test.ts`, `test/quota.test.ts`, `test/proof.test.ts`.
 
 ## Honesty guarantees (by design)
 

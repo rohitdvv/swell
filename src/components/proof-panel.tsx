@@ -81,7 +81,7 @@ export function ProofPanel({
         onClick={() => input.current?.click()}
         disabled={busy}
         className="inline-flex h-11 items-center gap-2 rounded px-5 text-[14px] font-semibold transition hover:brightness-110 disabled:opacity-60"
-        style={{ background: "var(--os-amber)", color: "#0A0C0B" }}
+        style={{ background: "var(--os-amber)", color: "#FFFFFF" }}
       >
         {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
         {proof ? "Re-measure with a newer export" : "Upload your POS export"}

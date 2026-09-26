@@ -1,33 +1,33 @@
 /**
- * Dark Swell OS skin for Clerk's hosted <SignIn>/<SignUp> cards, so the auth
- * step doesn't look like a different website. Amber primary, dark panel,
- * bone-white text. Typed via the component's own prop rather than @clerk/types
- * (not a direct dependency).
+ * Swell OS skin for Clerk's hosted <SignIn>/<SignUp> cards, so the auth step
+ * doesn't look like a different website: white card on warm paper, warm ink
+ * text, burnt-tomato primary. Typed via the component's own prop rather than
+ * @clerk/types (not a direct dependency).
  */
 export const clerkOsAppearance = {
   variables: {
-    colorPrimary: "#E8A33D",
-    colorBackground: "#101312",
-    colorText: "#EDE8DC",
-    colorTextSecondary: "#9A968A",
-    colorInputBackground: "#0D100E",
-    colorInputText: "#EDE8DC",
-    colorDanger: "#E4572E",
-    colorSuccess: "#7FD1AE",
-    borderRadius: "6px",
+    colorPrimary: "#C84B14",
+    colorBackground: "#FFFFFF",
+    colorText: "#1C1917",
+    colorTextSecondary: "#57534E",
+    colorInputBackground: "#FBF8F3",
+    colorInputText: "#1C1917",
+    colorDanger: "#B42318",
+    colorSuccess: "#16784D",
+    borderRadius: "8px",
     fontFamily: "var(--font-os-sans)",
   },
   elements: {
     rootBox: "w-full flex justify-center",
-    card: "bg-[#101312] border border-[rgba(237,232,220,0.12)] shadow-[0_40px_90px_-30px_rgba(0,0,0,0.8)]",
-    headerTitle: "text-[#EDE8DC]",
-    headerSubtitle: "text-[#9A968A]",
+    card: "bg-white border border-[rgba(28,25,23,0.1)] shadow-[0_30px_70px_-30px_rgba(28,25,23,0.25)]",
+    headerTitle: "text-[#1C1917]",
+    headerSubtitle: "text-[#57534E]",
     socialButtonsBlockButton:
-      "border border-[rgba(237,232,220,0.16)] text-[#EDE8DC] hover:bg-[rgba(237,232,220,0.05)]",
-    formButtonPrimary: "bg-[#E8A33D] text-[#0A0C0B] hover:brightness-110 font-semibold",
-    formFieldInput: "bg-[#0D100E] border border-[rgba(237,232,220,0.16)] text-[#EDE8DC]",
-    footerActionLink: "text-[#E8A33D] hover:brightness-110",
-    dividerLine: "bg-[rgba(237,232,220,0.12)]",
-    dividerText: "text-[#6B685E]",
+      "border border-[rgba(28,25,23,0.14)] text-[#1C1917] hover:bg-[rgba(28,25,23,0.04)]",
+    formButtonPrimary: "bg-[#C84B14] text-white hover:brightness-110 font-semibold",
+    formFieldInput: "bg-[#FBF8F3] border border-[rgba(28,25,23,0.16)] text-[#1C1917]",
+    footerActionLink: "text-[#C84B14] hover:brightness-110",
+    dividerLine: "bg-[rgba(28,25,23,0.1)]",
+    dividerText: "text-[#857F76]",
   },
 };

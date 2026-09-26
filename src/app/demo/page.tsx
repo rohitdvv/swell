@@ -40,7 +40,7 @@ export default async function DemoPage() {
       <Link
         href="/sign-up"
         className="inline-flex shrink-0 items-center gap-1.5 rounded px-3 py-1.5 text-[12px] font-semibold transition hover:brightness-110"
-        style={{ background: "var(--os-amber)", color: "#0A0C0B" }}
+        style={{ background: "var(--os-amber)", color: "#FFFFFF" }}
       >
         Generate your own <ArrowRight className="size-3.5" />
       </Link>
@@ -56,7 +56,7 @@ export default async function DemoPage() {
       <Link
         href="/sign-up"
         className="mt-1 inline-flex h-12 items-center gap-2 rounded px-6 text-[15px] font-semibold transition hover:brightness-110"
-        style={{ background: "var(--os-amber)", color: "#0A0C0B" }}
+        style={{ background: "var(--os-amber)", color: "#FFFFFF" }}
       >
         Get started free <ArrowRight className="size-4" />
       </Link>

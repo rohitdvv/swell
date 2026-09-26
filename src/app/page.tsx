@@ -1,14 +1,33 @@
 import Link from "next/link";
+import { Check, X } from "lucide-react";
 import { AuthNav } from "@/components/auth-nav";
 import { osClass, OS } from "@/components/os-theme";
-import { HeroPipeline, MonthExplorer, MoneyMath } from "@/components/landing/os-widgets";
+import { MonthExplorer, MoneyMath } from "@/components/landing/os-widgets";
+import { repo } from "@/lib/db";
+import { DEMO_SLUG } from "@/lib/authz";
+import type { CampaignDay } from "@/lib/types";
+
+// Posters in the hero come from the live demo campaign; refresh hourly.
+export const revalidate = 3600;
+
+async function heroPosters(): Promise<CampaignDay[]> {
+  try {
+    const demo = await repo.getCampaignBySlug(DEMO_SLUG);
+    if (!demo) return [];
+    const seen = new Set<string>();
+    return demo.days.filter((d) => !seen.has(d.item) && seen.add(d.item)).slice(0, 3);
+  } catch {
+    return []; // the hero still reads fine without them
+  }
+}
 
 /**
- * Swell OS — landing page.
- * Implements the Claude Design comp `Swell Landing.dc.html`, in the same
- * visual language as the campaign artifact.
+ * Swell — landing page. Positioned on the one thing a general-purpose AI
+ * can't do for a restaurant: read its register, and prove on that same
+ * register what a promotion earned.
  */
-export default function Landing() {
+export default async function Landing() {
+  const posters = await heroPosters();
   return (
     <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
       {/* ══ NAV ══ */}
@@ -16,7 +35,7 @@ export default function Landing() {
         className="sticky top-0 z-50 flex h-16 items-center gap-8 border-b px-5 sm:px-10"
         style={{
           borderColor: OS.line,
-          background: "rgba(10,12,11,0.82)",
+          background: "rgba(251,248,243,0.86)",
           backdropFilter: "blur(14px)",
         }}
       >
@@ -27,14 +46,11 @@ export default function Landing() {
           </span>
         </Link>
         <nav className="ml-auto flex items-center gap-5 text-[13px] sm:gap-7">
-          <Link href="#world" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
-            Intelligence
+          <Link href="#why" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
+            Why Swell
           </Link>
-          <Link href="#money" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
-            The math
-          </Link>
-          <Link href="#enterprise" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
-            Enterprise
+          <Link href="#proof" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
+            Proof
           </Link>
           <Link href="/demo" className="hidden hover:text-fg sm:block" style={{ color: OS.muted }}>
             Sample campaign
@@ -62,29 +78,29 @@ export default function Landing() {
               style={{ color: OS.amber }}
             >
               <span className="os-pulse size-1.5 rounded-full" style={{ background: OS.mint }} />
-              Revenue intelligence for restaurant groups
+              For independent restaurants
             </div>
             <h1 className="mt-6 font-display text-[clamp(44px,6vw,76px)] font-normal leading-[1.0] tracking-[-0.025em] text-balance">
-              The month is <em className="italic" style={{ color: OS.amber }}>already planned</em> when
-              you walk in.
+              Fill your slow hours. <em className="italic" style={{ color: OS.amber }}>Prove it</em> on your
+              register.
             </h1>
             <p className="mt-7 max-w-[520px] text-[17px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
-              Swell reads every register in your portfolio, the weather on each block, and the events
-              down each street — then hands every location a finished 30-day campaign. Offers,
-              posters, ad kit, projection. Unprompted.
+              Swell reads your POS, finds the hours you&apos;re quietly empty, and plans a month of offers
+              for them — each with a poster and caption you can post in one tap. Then it reads your
+              register again and tells you, in dollars, what the campaign actually earned.
             </p>
             <div className="mt-9 flex flex-wrap gap-3.5">
               <Link
                 href="/sign-up"
                 className="inline-flex h-[50px] items-center rounded px-6 text-[15px] font-bold transition hover:brightness-110"
-                style={{ background: OS.amber, color: OS.bg }}
+                style={{ background: OS.amber, color: "#FFFFFF" }}
               >
-                Run it on your data
+                Start free — no card
               </Link>
               <Link
                 href="/demo"
                 className="inline-flex h-[50px] items-center rounded border px-6 text-[15px] transition hover:border-current"
-                style={{ borderColor: "rgba(237,232,220,0.2)", color: OS.fg }}
+                style={{ borderColor: "rgba(28,25,23,0.2)", color: OS.fg }}
               >
                 See a live campaign
               </Link>
@@ -93,13 +109,13 @@ export default function Landing() {
               className="mt-8 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[11px] tracking-[0.06em]"
               style={{ color: OS.subtle }}
             >
-              <span>~10s TO FIRST PLAN</span>
-              <span>30 POSTERS / RUN</span>
-              <span>ZERO PROMPTS</span>
+              <span>READS YOUR POS</span>
+              <span>POSTS IN ONE TAP</span>
+              <span>PROVES WHAT IT EARNED</span>
             </div>
           </div>
 
-          <HeroPipeline />
+          <PosterStack days={posters} />
         </div>
       </section>
 
@@ -133,7 +149,7 @@ export default function Landing() {
           </div>
           <div
             className="grid gap-px border sm:grid-cols-3"
-            style={{ background: "rgba(237,232,220,0.1)", borderColor: "rgba(237,232,220,0.1)" }}
+            style={{ background: "rgba(28,25,23,0.1)", borderColor: "rgba(28,25,23,0.1)" }}
           >
             {STEPS.map((s) => (
               <div key={s.n} style={{ background: OS.bg, padding: "30px 26px 34px" }}>
@@ -205,83 +221,89 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ══ 04 · ENTERPRISE ══ */}
-      <section id="enterprise" className="border-t" style={{ borderColor: OS.line }}>
+      {/* ══ WHY NOT JUST ASK A CHATBOT ══ */}
+      <section id="why" className="border-t" style={{ borderColor: OS.line }}>
         <div className="mx-auto max-w-[1280px] px-5 py-20 sm:px-10 lg:py-[110px]">
-          <div className="max-w-[640px]">
+          <div className="max-w-[680px]">
             <div className="font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.amber }}>
-              CHAPTER 04 — BUILT FOR THE GROUP
+              CHAPTER 04 — WHY NOT JUST ASK CHATGPT?
             </div>
             <h2 className="mt-4 font-display text-[clamp(32px,5vw,48px)] font-normal leading-[1.05] tracking-[-0.02em] text-balance">
-              One brain. Every location. Zero extra headcount.
+              A chatbot can write a promotion. It can&apos;t see your register.
             </h2>
+            <p className="mt-5 text-[16px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
+              General assistants and Meta&apos;s ad tools are great at words and pictures. They don&apos;t
+              know which of your hours are empty, and they can&apos;t tell you whether last month&apos;s
+              offer made you a dollar. That&apos;s the whole job.
+            </p>
           </div>
-
-          <div className="mt-13 grid gap-10 lg:grid-cols-[1.4fr_1fr]" style={{ marginTop: 52 }}>
-            <div
-              className="self-start overflow-hidden rounded-lg border"
-              style={{ borderColor: OS.line2, background: OS.panel }}
-            >
-              <div
-                className="flex items-center border-b px-5 py-3.5 font-mono text-[10.5px] tracking-[0.16em]"
-                style={{ borderColor: OS.line, color: OS.subtle }}
-              >
-                PORTFOLIO — EXAMPLE GROUP
-                <span className="ml-auto" style={{ color: OS.mint }}>
-                  4 LIVE CAMPAIGNS
-                </span>
-              </div>
-              {LOCATIONS.map((loc) => (
-                <div
-                  key={loc.name}
-                  className="grid grid-cols-[1.2fr_1fr_0.7fr_0.8fr] items-center gap-3 border-b px-5 py-4"
-                  style={{ borderColor: "rgba(237,232,220,0.06)" }}
-                >
-                  <div>
-                    <div className="text-[14px] font-semibold" style={{ color: OS.fg }}>
-                      {loc.name}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[10px]" style={{ color: OS.subtle }}>
-                      {loc.city}
-                    </div>
-                  </div>
-                  <div className="font-mono text-[11px]" style={{ color: OS.muted }}>
-                    {loc.signal}
-                  </div>
-                  <div className="font-display text-[19px]" style={{ color: OS.mint }}>
-                    {loc.proj}
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className="rounded-[3px] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.1em]"
-                      style={{ background: "rgba(127,209,174,0.12)", color: OS.mint }}
-                    >
-                      {loc.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              <div className="px-5 py-3 font-mono text-[9.5px] tracking-[0.1em]" style={{ color: OS.subtle }}>
-                ILLUSTRATIVE — SAMPLE PORTFOLIO, NOT A REAL CUSTOMER
-              </div>
-            </div>
-
-            <div
-              className="flex flex-col gap-px border"
-              style={{ background: "rgba(237,232,220,0.1)", borderColor: "rgba(237,232,220,0.1)" }}
-            >
-              {TRUST.map((t) => (
-                <div key={t.k} className="flex-1 px-5.5 py-4.5" style={{ background: OS.bg, padding: "18px 22px" }}>
-                  <div className="font-mono text-[10px] tracking-[0.16em]" style={{ color: OS.amber }}>
-                    {t.k}
-                  </div>
-                  <div className="mt-1.5 text-[13.5px] leading-[1.5]" style={{ color: OS.muted }}>
-                    {t.v}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="mt-12 overflow-x-auto rounded-lg border" style={{ borderColor: OS.line2, background: OS.panel }}>
+            <table className="w-full min-w-[560px] text-left text-[14px]">
+              <thead>
+                <tr className="border-b" style={{ borderColor: OS.line2 }}>
+                  <th className="px-5 py-4 font-normal" style={{ color: OS.subtle }} />
+                  <th className="px-5 py-4 font-semibold" style={{ color: OS.muted }}>
+                    ChatGPT / Meta AI
+                  </th>
+                  <th className="px-5 py-4 font-semibold" style={{ color: OS.amber }}>
+                    Swell
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARE.map(([what, them, us]) => (
+                  <tr key={what} className="border-b last:border-0" style={{ borderColor: OS.line }}>
+                    <td className="px-5 py-4 font-medium">{what}</td>
+                    <td className="px-5 py-4" style={{ color: OS.muted }}>
+                      <span className="inline-flex items-start gap-2">
+                        {them.startsWith("✓") ? (
+                          <Check className="mt-0.5 size-4 shrink-0" style={{ color: OS.mint }} />
+                        ) : (
+                          <X className="mt-0.5 size-4 shrink-0" style={{ color: OS.subtle }} />
+                        )}
+                        {them.replace(/^[✓✗] /, "")}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="inline-flex items-start gap-2">
+                        <Check className="mt-0.5 size-4 shrink-0" style={{ color: OS.mint }} />
+                        {us}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </div>
+      </section>
+
+      {/* ══ PROOF ══ */}
+      <section id="proof" className="border-t" style={{ borderColor: OS.line, background: OS.bgAlt }}>
+        <div className="mx-auto grid max-w-[1280px] items-center gap-12 px-5 py-20 sm:px-10 lg:grid-cols-2 lg:py-[110px]">
+          <div>
+            <div className="font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.amber }}>
+              CHAPTER 05 — PROOF
+            </div>
+            <h2 className="mt-4 font-display text-[clamp(32px,5vw,48px)] font-normal leading-[1.05] tracking-[-0.02em] text-balance">
+              Next month, your register grades the campaign.
+            </h2>
+            <p className="mt-5 text-[16px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
+              Upload the same export after the campaign runs. Swell compares every campaign day with what
+              your sales would have been without it — forecast from your history before it started — and
+              checks each promo dish inside its window. You get a verdict and a dollar figure with an
+              honest range. Not a vanity metric: your register.
+            </p>
+            <ul className="mt-7 space-y-3 text-[14.5px]">
+              {PROOF_POINTS.map((p) => (
+                <li key={p} className="flex gap-3">
+                  <Check className="mt-0.5 size-4 shrink-0" style={{ color: OS.mint }} />
+                  <span style={{ color: OS.fg }}>{p}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ProofIllustration />
         </div>
       </section>
 
@@ -290,7 +312,7 @@ export default function Landing() {
         <div className="mx-auto max-w-[1280px] px-5 py-20 sm:px-10 lg:py-[100px]">
           <div className="flex flex-wrap items-baseline gap-6">
             <div className="font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.amber }}>
-              CHAPTER 05
+              CHAPTER 06
             </div>
             <h2 className="font-display text-[40px] font-normal tracking-[-0.02em]">
               Not one model. A team of ten.
@@ -337,20 +359,21 @@ export default function Landing() {
             Stop guessing what to run on <em className="italic" style={{ color: OS.amber }}>Tuesday.</em>
           </h2>
           <p className="mx-auto mt-6 max-w-[440px] text-[16px] leading-[1.6]" style={{ color: OS.muted }}>
-            Your first portfolio-wide campaign takes about ten seconds. See it before you pay for it.
+            Your first campaign is free and takes about a minute. Upload an export, get a month of offers
+            and posters, and find out what it earned.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-3.5">
             <Link
               href="/sign-up"
               className="inline-flex h-[52px] items-center rounded px-7 text-[15px] font-bold transition hover:brightness-110"
-              style={{ background: OS.amber, color: OS.bg }}
+              style={{ background: OS.amber, color: "#FFFFFF" }}
             >
-              Open the console
+              Start free
             </Link>
             <Link
               href="/demo"
               className="inline-flex h-[52px] items-center rounded border px-7 text-[15px] transition"
-              style={{ borderColor: "rgba(237,232,220,0.2)", color: OS.fg }}
+              style={{ borderColor: "rgba(28,25,23,0.2)", color: OS.fg }}
             >
               View sample campaign
             </Link>
@@ -370,7 +393,7 @@ export default function Landing() {
           </span>
         </span>
         <span className="font-mono text-[10px] tracking-[0.1em]" style={{ color: OS.subtle }}>
-          A BRAIN THAT&apos;S BEEN IN THE KITCHEN
+          MARKETING THAT PROVES IT PAID
         </span>
         <nav className="ml-auto flex gap-5 text-[12px]">
           <Link href="/demo" style={{ color: OS.muted }}>
@@ -395,9 +418,10 @@ const TICKER = [
   "GAME DAY WINTRUST → HERO ITEM, FULL MARGIN",
   "30 POSTERS RENDERED IN 9.4S",
   "CAPTIONS GUARDRAILED — 0 OVER-CLAIMS",
-  "PROJECTION +$3.2K · CONFIDENCE MODERATE",
+  "SLOW-HOUR SALES → MOSTLY PROFIT",
   "7/7 VALIDATION CHECKS PASSED",
-  "RIDGE REGRESSION · HOLDOUT MAE 8.2%",
+  "3 MODELS COMPETE · WINNER BEATS 'SAME AS LAST WEEK'",
+  "PROOF: ACTUAL VS EXPECTED, ON YOUR REGISTER",
   "SEASONAL NORMALS BEYOND DAY 16 — MARKED EST.",
 ];
 
@@ -405,17 +429,17 @@ const STEPS = [
   {
     n: "01",
     title: "Drop in your sales",
-    body: "A Toast or Square export per location. Swell reads every order and z-scores your dayparts to find the hours quietly bleeding money.",
+    body: "A Toast or Square export. Swell reads every order and finds the hours quietly bleeding money — by day, by daypart, by dish.",
   },
   {
     n: "02",
-    title: "Paste site + addresses",
-    body: "It lifts each brand's logo, colours and voice, then pulls the live forecast and real events for every block you operate on.",
+    title: "Paste your site + address",
+    body: "It lifts your logo, colours and voice, then pulls the live forecast and real events on your block.",
   },
   {
     n: "03",
-    title: "Get 30 days, built",
-    body: "An offer for every day at every location — item, window, discount — each with a finished poster, caption, and projection.",
+    title: "Post, then prove",
+    body: "An offer for every day — dish, window, discount — with a poster and caption to post in one tap. Next month, upload again and see what it earned.",
   },
 ];
 
@@ -425,41 +449,79 @@ const ASSUMPTIONS = [
   { label: "Demand multiplier", tag: "modeled", bg: "rgba(106,90,205,0.12)", fg: "#6A5ACD" },
 ];
 
-const LOCATIONS = [
-  { name: "Osteria Lume", city: "GREENWICH VILLAGE, NYC", signal: "RAIN TUE · GAME SAT", proj: "+$3.2K", status: "LIVE" },
-  { name: "Lume Trattoria", city: "WILLIAMSBURG, BK", signal: "HEATWAVE · PATIO PUSH", proj: "+$2.7K", status: "LIVE" },
-  { name: "Bar Lume", city: "WEST LOOP, CHI", signal: "WINTRUST GAME ×3", proj: "+$4.1K", status: "LIVE" },
-  { name: "Lume Cucina", city: "SOUTH END, BOS", signal: "HOLIDAY MON", proj: "+$1.9K", status: "LIVE" },
+const COMPARE: Array<[string, string, string]> = [
+  ["Knows your slow hours", "✗ Only what you tell it", "Reads every order in your POS export"],
+  ["Knows tomorrow's weather and local events", "✗ Not unless you look it up", "Live forecast + holidays + games near you"],
+  ["A month of offers, posters and captions", "✓ If you prompt it 30 times", "One upload, about a minute"],
+  ["Posts to Instagram and Facebook", "✓ Via ad accounts and setup", "One tap from your phone, no linking"],
+  ["Tells you what it earned", "✗ Clicks and likes, not dollars", "Actual vs expected on your register"],
+  ["Honest about uncertainty", "✗ Confident either way", "Every number ships with a range"],
 ];
 
-/**
- * Honest capability copy. The comp's placeholder text claimed SOC 2 Type II,
- * SSO/SAML, a 99.9% SLA and a public API — none of which Swell has today.
- * These describe what the product actually does, so the page can go in front
- * of restaurant groups and investors without misrepresenting it.
- */
-const TRUST = [
-  {
-    k: "MULTI-LOCATION",
-    v: "Each venue gets its own brand kit, local forecast and events — one run covers the portfolio.",
-  },
-  {
-    k: "HONEST NUMBERS",
-    v: "Every projection ships as a range with a stated confidence, and each input is tagged measured, assumed or modeled.",
-  },
-  {
-    k: "AUDITABLE RUNS",
-    v: "Every generation is logged with what it read and projected, so a regenerate can't quietly rewrite last week's plan.",
-  },
-  {
-    k: "YOUR DATA STAYS YOURS",
-    v: "POS exports are used to build your campaigns. They are never used to train shared models.",
-  },
-  {
-    k: "GOOGLE SIGN-IN",
-    v: "Sign in with Google or email. Team roles, SSO and white-label are on the roadmap, not shipped yet.",
-  },
+const PROOF_POINTS = [
+  "The expected line comes from a model trained only on sales before the campaign",
+  "Promo dishes counted inside their windows against the same weekday before",
+  "A verdict you can trust: proven, promising, no lift, or too early",
+  "Tested: on data with no real effect, it wrongly says 'proven' about 1 time in 12",
 ];
+
+/** Posters from the live demo, fanned like a stack of prints on the pass. */
+function PosterStack({ days }: { days: CampaignDay[] }) {
+  if (days.length === 0) return <div aria-hidden className="hidden lg:block" />;
+  const tilt = ["-rotate-6 translate-x-6", "rotate-2 -translate-y-3 z-10", "rotate-[8deg] -translate-x-6"];
+  return (
+    <div className="relative mx-auto flex h-[440px] w-full max-w-[560px] items-center justify-center sm:h-[500px]">
+      {days.map((d, i) => (
+        <div
+          key={d.id}
+          className={`relative -mx-10 w-[44%] shrink-0 overflow-hidden rounded-xl border bg-white shadow-[0_30px_60px_-25px_rgba(28,25,23,0.45)] transition duration-500 hover:z-20 hover:rotate-0 hover:scale-105 ${tilt[i % 3]}`}
+          style={{ borderColor: OS.line2 }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`${d.creative_url}?ar=4x5`} alt={`${d.item} poster`} className="aspect-[4/5] w-full object-cover" />
+        </div>
+      ))}
+      <div
+        className="absolute bottom-2 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.06em] shadow-sm"
+        style={{ borderColor: OS.line2, background: OS.panel, color: OS.muted }}
+      >
+        REAL POSTERS FROM THE LIVE DEMO · 30 PER MONTH
+      </div>
+    </div>
+  );
+}
+
+/** A labelled illustration of the Proof report — not a real customer's numbers. */
+function ProofIllustration() {
+  const bars = [62, 58, 71, 66, 80, 92, 74, 60, 69, 77, 73, 88, 95, 70];
+  const exp = [60, 57, 62, 61, 70, 84, 66, 59, 61, 66, 64, 78, 85, 62];
+  return (
+    <div className="rounded-xl border p-6 shadow-[0_30px_70px_-40px_rgba(28,25,23,0.35)]" style={{ borderColor: OS.line2, background: OS.panel }}>
+      <div className="text-[13px] font-semibold" style={{ color: OS.mint }}>
+        Proven on your register
+      </div>
+      <div className="mt-1 font-display text-5xl" style={{ color: OS.mint }}>
+        +$3.1K
+      </div>
+      <div className="mt-1 font-mono text-[11px]" style={{ color: OS.muted }}>
+        80% RANGE +$1.2K TO +$5.0K · 14 CAMPAIGN DAYS
+      </div>
+      <div className="mt-6 flex h-32 items-end gap-1.5">
+        {bars.map((b, i) => (
+          <div key={i} className="relative flex h-full flex-1 items-end">
+            <div className="absolute inset-x-0 bottom-0 rounded-t-sm border" style={{ height: `${exp[i]}%`, borderColor: "rgba(28,25,23,0.3)" }} />
+            <div className="relative w-full rounded-t-sm" style={{ height: `${b}%`, background: OS.mint, opacity: 0.7 }} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-4 font-mono text-[10px]" style={{ color: OS.subtle }}>
+        <span>■ ACTUAL</span>
+        <span>□ EXPECTED WITHOUT THE CAMPAIGN</span>
+        <span className="ml-auto">ILLUSTRATION</span>
+      </div>
+    </div>
+  );
+}
 
 const AGENT_INDEX = [
   ["I.", "Brand", "Reads the website — logo, palette, typography, and a voice profile to steer tone."],
@@ -467,7 +529,7 @@ const AGENT_INDEX = [
   ["III.", "Location", "Geocodes every venue to coordinates."],
   ["IV.", "Weather", "Live 16-day forecast, then 5-year climate normals — estimates marked, never asserted."],
   ["V.", "Events", "Holidays plus nearby ticketed events that move demand."],
-  ["VI.", "Analyst", "Ridge regression on your daily sales, backtested holdout MAE, z-scored dayparts."],
+  ["VI.", "Analyst", "Three forecasting models compete on your sales; the winner ships with calibrated ranges. Z-scores your dayparts."],
   ["VII.", "Strategy", "Composes 30 offers — item, window, discount — adapted to each day's weather and events."],
   ["VIII.", "Copywriter", "One on-brand caption per day, through the claims and length guardrail."],
   ["IX.", "Creative", "A branded poster for every day — colours, logo, real food imagery."],

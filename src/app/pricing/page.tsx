@@ -192,7 +192,7 @@ export default function PricingPage() {
             <Link
               href="/console"
               className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded border px-5 text-[14px] font-semibold transition hover:border-current"
-              style={{ borderColor: "rgba(237,232,220,0.25)", color: OS.fg }}
+              style={{ borderColor: "rgba(28,25,23,0.25)", color: OS.fg }}
             >
               Start free <ArrowRight className="size-4" />
             </Link>

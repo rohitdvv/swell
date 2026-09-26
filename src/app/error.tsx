@@ -33,7 +33,7 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
         <Link
           href="/"
           className="inline-flex h-11 items-center rounded border px-6 text-[14px]"
-          style={{ borderColor: "rgba(237,232,220,0.2)", color: OS.fg }}
+          style={{ borderColor: "rgba(28,25,23,0.2)", color: OS.fg }}
         >
           Back to home
         </Link>

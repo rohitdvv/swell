@@ -5,7 +5,7 @@ import { Show, UserButton } from "@clerk/nextjs";
 // Swell OS amber CTA — shared so the nav button matches every page.
 const CTA =
   "inline-flex h-9 items-center gap-1.5 rounded px-4 text-[13px] font-semibold transition hover:brightness-110";
-const CTA_STYLE = { background: "var(--os-amber, #E8A33D)", color: "#0A0C0B" };
+const CTA_STYLE = { background: "var(--os-amber, #E8A33D)", color: "#FFFFFF" };
 
 /**
  * Signed out → "Sign in" + "Get started" (Clerk pages, Google button included).

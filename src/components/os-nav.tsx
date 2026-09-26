@@ -12,7 +12,7 @@ export function OsNav({ links = DEFAULT_LINKS }: { links?: NavLink[] }) {
   return (
     <header
       className="sticky top-0 z-50 flex h-16 items-center gap-8 border-b px-5 sm:px-10"
-      style={{ borderColor: OS.line, background: "rgba(10,12,11,0.82)", backdropFilter: "blur(14px)" }}
+      style={{ borderColor: OS.line, background: "rgba(251,248,243,0.86)", backdropFilter: "blur(14px)" }}
     >
       <Link href="/" className="flex items-baseline gap-2.5">
         <span className="font-display text-2xl font-medium tracking-[-0.02em]">Swell</span>

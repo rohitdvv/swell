@@ -243,7 +243,7 @@ function Console({ plan }: { plan: PlanInfo | null }) {
     <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
       <header
         className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b px-4 sm:px-6 lg:px-8"
-        style={{ borderColor: OS.line, background: "rgba(10,12,11,0.85)", backdropFilter: "blur(14px)" }}
+        style={{ borderColor: OS.line, background: "rgba(251,248,243,0.86)", backdropFilter: "blur(14px)" }}
       >
         <Link href="/" className="flex items-baseline gap-2" title="Home">
           <span className="font-display text-xl">Swell</span>

@@ -251,7 +251,8 @@ export async function getCreativePng(
   campaign: Campaign,
   size: { w: number; h: number } = { w: 1080, h: 1350 }
 ): Promise<Buffer> {
-  const file = path.join(creativesDir(), `${day.id}-${size.w}x${size.h}.png`);
+  // Bump the version when poster rendering changes so stale renders are never served.
+  const file = path.join(creativesDir(), `${day.id}-${size.w}x${size.h}-v3.png`);
   try {
     return await fs.promises.readFile(file);
   } catch {

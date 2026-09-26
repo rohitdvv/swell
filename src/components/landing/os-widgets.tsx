@@ -80,7 +80,7 @@ export function HeroPipeline() {
                   <span
                     className="size-1.5 shrink-0 rounded-full"
                     style={{
-                      background: done ? OS.mint : active ? OS.amber : "rgba(237,232,220,0.15)",
+                      background: done ? OS.mint : active ? OS.amber : "rgba(28,25,23,0.15)",
                       boxShadow: active ? "0 0 8px rgba(232,163,61,0.9)" : "none",
                     }}
                   />
@@ -265,7 +265,7 @@ export function MonthExplorer() {
                 aria-label={`${c.label}: ${c.offer}`}
                 className="rounded-[5px] border p-2.5 text-left transition-colors"
                 style={{
-                  borderColor: on ? OS.amber : c.isEvent ? "rgba(127,209,174,0.35)" : "rgba(237,232,220,0.1)",
+                  borderColor: on ? OS.amber : c.isEvent ? "rgba(127,209,174,0.35)" : "rgba(28,25,23,0.1)",
                   background: on ? "rgba(232,163,61,0.08)" : OS.panel,
                 }}
               >
