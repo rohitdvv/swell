@@ -6,12 +6,11 @@ import { trainSalesModel } from "@/lib/model";
 import { measureProof } from "@/lib/proof";
 import { getAccountEmail } from "@/lib/billing/account";
 import { rateLimit } from "@/lib/rate-limit";
+import { readUpload, MAX_UPLOAD_BYTES, ALLOWED_EXT, UploadTooLargeError } from "@/lib/upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
-const ALLOWED_EXT = /\.(csv|xlsx|xls)$/i;
 
 /**
  * Proof: the owner uploads their POS export covering the campaign. We measure
@@ -44,7 +43,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       return NextResponse.json({ error: "Upload a CSV or Excel export (.csv, .xlsx)." }, { status: 415 });
     }
 
-    const rows = fileToRows(Buffer.from(await file.arrayBuffer()), file.name);
+    const upload = await readUpload(file);
+    const rows = fileToRows(upload.buf, upload.name);
     let after;
     try {
       after = summarize(rows, campaign!.restaurant_name);
@@ -80,6 +80,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     await repo.setProof(campaign!.id, report);
     return NextResponse.json({ proof: report });
   } catch (err) {
+    if (err instanceof UploadTooLargeError) return NextResponse.json({ error: err.message }, { status: 413 });
     if (err instanceof SalesParseError) return NextResponse.json({ error: err.message }, { status: 400 });
     console.error("proof error", err);
     return NextResponse.json(

@@ -99,6 +99,53 @@ function validHex(v: string | undefined | null): string | null {
   return `#${hex.toLowerCase()}`;
 }
 
+/** Sites ship "null" and "undefined" as literal meta content — treat as missing. */
+function clean(v: string | undefined | null): string | null {
+  const t = v?.replace(/\s+/g, " ").trim();
+  return t && !/^(null|undefined|none|n\/a)$/i.test(t) ? t : null;
+}
+
+/** A usable brand colour: not white, black or grey (a white "brand" makes white posters). */
+export function brandable(hex: string | null): string | null {
+  if (!hex) return null;
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => x / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const sat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
+  if (l > 0.9 || l < 0.08 || sat < 0.18) return null;
+  return hex;
+}
+
+const PITCH = /^(?:the\s+)?(?:best|top[- ]rated|#1|voted|award[- ]winning|welcome|official|home\b|order online|menu\b)/i;
+
+/** Is `needle` a subsequence of `hay`? ("hpbng" in "hydeparkbarandgrill") */
+function subsequence(needle: string, hay: string): boolean {
+  let i = 0;
+  for (const ch of hay) if (ch === needle[i]) i++;
+  return needle.length > 0 && i === needle.length;
+}
+
+/**
+ * The venue's name from a page title written for search engines:
+ *   "Best American Restaurant in Austin | Hyde Park Bar & Grill" → "Hyde Park Bar & Grill"
+ *   "Moonshine Patio Bar & Grill Best Comfort Food in Austin Texas" → "Moonshine Patio Bar & Grill"
+ * Segments that spell the domain win; pitch phrases lose.
+ */
+export function nameFromTitle(title: string, domain = ""): string | null {
+  const host = domain.replace(/^www\./, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+  const segments = title
+    .split(/\s[|\-–—:·•]\s|\s[|–—·•]|[|–—·•]\s/)
+    .map((seg) => clean(seg.split(/\s+(?:best|top[- ]rated|#1|voted|award[- ]winning|official site)\b/i)[0].replace(/^welcome to\s+/i, "")))
+    .filter((seg): seg is string => !!seg && seg.length <= 60);
+  if (!segments.length) return null;
+  const score = (seg: string) =>
+    (host && subsequence(host, seg.toLowerCase().replace(/[^a-z0-9]/g, "")) ? 2 : 0) - (PITCH.test(seg) ? 3 : 0);
+  const best = [...segments].sort((x, y) => score(y) - score(x))[0];
+  return PITCH.test(best) ? null : best;
+}
+
 async function dominantColorFromImage(url: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(url, 6000);
@@ -106,10 +153,8 @@ async function dominantColorFromImage(url: string): Promise<string | null> {
     const buf = Buffer.from(await res.arrayBuffer());
     const { dominant } = await sharp(buf).stats();
     // Skip near-white/near-black logos (transparent bg edges) — nudge if flat.
-    const hex = toHex(dominant.r, dominant.g, dominant.b);
-    const lum = luminance(hex);
-    if (lum > 0.92 || lum < 0.04) return null;
-    return hex;
+    // Skip white/black/grey logos (transparent edges, monochrome marks).
+    return brandable(toHex(dominant.r, dominant.g, dominant.b));
   } catch {
     return null;
   }
@@ -207,8 +252,9 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
 
   // name
   const name =
-    $('meta[property="og:site_name"]').attr("content")?.trim() ||
-    $("title").first().text().split(/[|\-–—]/)[0].trim() ||
+    nameFromTitle(clean($('meta[property="og:site_name"]').attr("content")) ?? "", domain) ||
+    nameFromTitle($("title").first().text(), domain) ||
+    nameFromTitle(clean($('meta[property="og:title"]').attr("content")) ?? "", domain) ||
     titleCaseFromDomain(domain);
 
   // logo candidates
@@ -225,8 +271,7 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
   const logo_url = logoCandidates[0] ?? null;
 
   // color: theme-color meta → CSS custom props → logo dominant → domain hash
-  let primary =
-    validHex($('meta[name="theme-color"]').attr("content")) || null;
+  let primary = brandable(validHex($('meta[name="theme-color"]').attr("content")));
   if (primary) notes.push("Primary color from <meta theme-color>.");
 
   if (!primary) {
@@ -234,8 +279,14 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
     const varMatch = styleText.match(
       /--(?:primary|brand|accent|color-primary|main)[^:;]*:\s*(#[0-9a-f]{3,6})/i
     );
-    const anyHex = styleText.match(/#[0-9a-f]{6}/i);
-    primary = validHex(varMatch?.[1]) || validHex(anyHex?.[0]) || null;
+    // Otherwise the site's most-used real colour (skipping whites, blacks and greys).
+    const counts = new Map<string, number>();
+    for (const m of styleText.match(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi) ?? []) {
+      const hex = brandable(validHex(m));
+      if (hex) counts.set(hex, (counts.get(hex) ?? 0) + 1);
+    }
+    const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    primary = brandable(validHex(varMatch?.[1])) || common;
     if (primary) notes.push("Primary color inferred from site CSS.");
   }
 
@@ -297,10 +348,10 @@ export async function extractBrandKit(rawUrl: string): Promise<BrandKit> {
 
   // tagline
   const tagline =
-    $('meta[property="og:description"]').attr("content")?.trim() ||
-    $('meta[name="description"]').attr("content")?.trim() ||
-    $("h1").first().text().trim() ||
-    $("h2").first().text().trim() ||
+    clean($('meta[property="og:description"]').attr("content")) ||
+    clean($('meta[name="description"]').attr("content")) ||
+    clean($("h1").first().text()) ||
+    clean($("h2").first().text()) ||
     null;
 
   // voice: hero + about copy

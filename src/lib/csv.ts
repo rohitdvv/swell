@@ -28,12 +28,52 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function findKey(headers: string[], patterns: RegExp[]): string | null {
+function findKey(headers: string[], patterns: RegExp[], exclude?: RegExp): string | null {
   for (const p of patterns) {
-    const hit = headers.find((h) => p.test(norm(h)));
+    const hit = headers.find((h) => p.test(norm(h)) && !(exclude && exclude.test(norm(h))));
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * Which column is which, for Toast, Square and hand-made exports alike.
+ * The sales column must be the per-LINE amount: order-level figures
+ * (order_total, subtotal) repeat on every line of an order, and discount,
+ * comp, tax and tip columns are not sales at all — matching any of them
+ * silently corrupts every number downstream.
+ */
+const NOT_SALES = /discount|comp|tax|tip|fee|refund|subtotal|ordertotal|checktotal|modifier|unitprice/;
+
+function detectColumns(headers: string[]) {
+  return {
+    date: findKey(headers, [/^date$/, /businessdate/, /servicedate/, /orderdate/, /date/, /day/], /closed|updated/),
+    time: findKey(headers, [/^time$/, /ordertime/, /openedat/, /createdat/, /time/], /closed/),
+    item: findKey(headers, [/menuitem/, /itemname/, /^item$/, /product/, /^name$/, /item/], /guid|id$|category|selection/),
+    qty: findKey(headers, [/quantity/, /^qty$/, /qtysold/, /units/, /count/], /guest/),
+    net: findKey(
+      headers,
+      [/netsales/, /netamount/, /linetotal/, /itemtotal/, /linenet/, /netprice/, /^net$/, /^amount$/, /^sales$/, /amount/, /total/, /gross/],
+      NOT_SALES
+    ),
+    pay: findKey(headers, [/paymenttype/, /paymentmethod/, /cardtype/, /tender/, /payment/]),
+    void: findKey(headers, [/voided/, /^void$/, /refunded/, /refund/]),
+    order: findKey(headers, [/orderid/, /orderguid/, /checkid/, /transactionid/, /receiptid/, /ordernumber/, /order/, /check/, /transaction/], /source|total|subtotal|tax|tip|date|at$/),
+    location: findKey(headers, [/locationname/, /restaurantname/, /storename/, /venue/, /^location$/, /^store$/, /^restaurant$/]),
+  };
+}
+
+/**
+ * The venue named inside the export, e.g. Toast's
+ * "Main Street Grill - Austin, TX" → { name, location }.
+ */
+export function detectVenue(rows: RawRow[]): { name: string | null; location: string | null } {
+  if (!rows.length) return { name: null, location: null };
+  const k = detectColumns(Object.keys(rows[0])).location;
+  const raw = k ? String(rows[0][k] ?? "").trim() : "";
+  if (!raw) return { name: null, location: null };
+  const m = raw.match(/^(.*?)\s+[-–—|]\s+(.+)$/);
+  return m ? { name: m[1].trim().slice(0, 120), location: m[2].trim().slice(0, 200) } : { name: raw.slice(0, 120), location: null };
 }
 
 function daypartFromHour(hour: number): Daypart {
@@ -109,14 +149,8 @@ export function summarize(
   if (!rows.length) throw new SalesParseError("The file has no rows.");
   const headers = Object.keys(rows[0]);
 
-  const kDate = findKey(headers, [/^date$/, /businessdate/, /orderdate/, /date/, /day/]);
-  const kTime = findKey(headers, [/^time$/, /ordertime/, /time/, /openedat/, /createdat/]);
-  const kItem = findKey(headers, [/menuitem/, /itemname/, /^item$/, /product/, /^name$/, /item/]);
-  const kQty = findKey(headers, [/quantity/, /^qty$/, /qtysold/, /count/, /units/]);
-  const kNet = findKey(headers, [/netsales/, /netamount/, /netprice/, /^net$/, /amount/, /^sales$/, /total/, /gross/]);
-  const kPay = findKey(headers, [/paymenttype/, /paymentmethod/, /cardtype/, /tender/, /payment/]);
-  const kVoid = findKey(headers, [/voided/, /^void$/, /refunded/, /refund/]);
-  const kOrder = findKey(headers, [/orderid/, /checkid/, /transactionid/, /receiptid/, /ordernumber/, /order/, /check/, /transaction/]);
+  const cols = detectColumns(headers);
+  const { date: kDate, time: kTime, item: kItem, qty: kQty, net: kNet, pay: kPay, void: kVoid, order: kOrder } = cols;
 
   if (!kDate) throw new SalesParseError("Could not find a date column in the file.");
   if (!kNet) throw new SalesParseError("Could not find a sales / amount column.");
@@ -260,13 +294,7 @@ export function summarize(
 /** One sold line item — what Proof needs to see promo windows, not just totals. */
 export function itemLines(rows: RawRow[]): ItemLine[] {
   if (!rows.length) return [];
-  const headers = Object.keys(rows[0]);
-  const kDate = findKey(headers, [/^date$/, /businessdate/, /orderdate/, /date/, /day/]);
-  const kTime = findKey(headers, [/^time$/, /ordertime/, /time/, /openedat/, /createdat/]);
-  const kItem = findKey(headers, [/menuitem/, /itemname/, /^item$/, /product/, /^name$/, /item/]);
-  const kQty = findKey(headers, [/quantity/, /^qty$/, /qtysold/, /count/, /units/]);
-  const kNet = findKey(headers, [/netsales/, /netamount/, /netprice/, /^net$/, /amount/, /^sales$/, /total/, /gross/]);
-  const kVoid = findKey(headers, [/voided/, /^void$/, /refunded/, /refund/]);
+  const { date: kDate, time: kTime, item: kItem, qty: kQty, net: kNet, void: kVoid } = detectColumns(Object.keys(rows[0]));
   if (!kDate || !kItem) return [];
   const out: ItemLine[] = [];
   for (const r of rows) {
@@ -307,6 +335,8 @@ function normalizePayment(v: string | undefined): "credit" | "cash" | "other" {
 
 function detectSource(headers: string[]): ParsedSalesSummary["source"] {
   const joined = headers.map(norm).join(" ");
+  // Toast's own export columns, even when "toast" appears nowhere in the file.
+  if (/orderguid/.test(joined) && /(itemselectionguid|servicedate)/.test(joined)) return "toast";
   if (/toast/.test(joined)) return "toast";
   if (/square/.test(joined)) return "square";
   return "generic";

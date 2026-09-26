@@ -5,6 +5,7 @@ import { ShieldCheck, Upload, Loader2, FileSpreadsheet, LineChart, Receipt } fro
 import { Card } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import type { ProofReport } from "@/lib/proof";
+import { compressForUpload } from "@/lib/compress-upload";
 import { formatCompactCurrency, formatShortDate } from "@/lib/utils";
 
 const VERDICT: Record<ProofReport["verdict"], { title: string; body: string; tone: string }> = {
@@ -54,7 +55,7 @@ export function ProofPanel({
     setBusy(true);
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", await compressForUpload(file));
       const res = await fetch(`/api/campaigns/${slug}/proof`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.proof) throw new Error(data.error || "Could not measure this file.");

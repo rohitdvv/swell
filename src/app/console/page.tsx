@@ -30,6 +30,7 @@ import { osClass, OS } from "@/components/os-theme";
 import { UserButton } from "@clerk/nextjs";
 import type { ParsedSalesSummary, CampaignWithDays, Campaign, CampaignRun } from "@/lib/types";
 import { formatCurrency, formatNumber, formatCompactCurrency } from "@/lib/utils";
+import { compressForUpload } from "@/lib/compress-upload";
 
 type PlanInfo = { id: string; name: string; used: number; limit: number };
 
@@ -107,13 +108,16 @@ function Console({ plan }: { plan: PlanInfo | null }) {
     setParsing(true);
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", await compressForUpload(file));
       const res = await fetch("/api/parse-csv", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        error: res.status === 413 ? "That file is too large — export a shorter date range." : "Upload failed.",
+      }));
       if (!res.ok) throw new Error(data.error);
       setSales(data.sales);
       setSalesMeta({ name: data.meta.name, filename: data.meta.filename });
       setName(data.meta.name);
+      if (data.meta.location) setLocation(data.meta.location);
       toast("Sales history parsed.", "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not parse file.", "error");

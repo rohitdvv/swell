@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { parseSalesFile, SalesParseError } from "@/lib/csv";
+import { SalesParseError } from "@/lib/csv";
 import { buildSampleCsv } from "@/lib/sample";
-import { summarize, fileToRows } from "@/lib/csv";
+import { summarize, fileToRows, detectVenue } from "@/lib/csv";
+import { readUpload, MAX_UPLOAD_BYTES, ALLOWED_EXT, UploadTooLargeError } from "@/lib/upload";
 import { getAccountEmail } from "@/lib/billing/account";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** 90 days of a busy restaurant's line items is ~2–6 MB of CSV. 15 MB is generous. */
-const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
-const ALLOWED_EXT = /\.(csv|xlsx|xls)$/i;
 
 export async function POST(request: Request) {
   const email = await getAccountEmail();
@@ -57,14 +55,27 @@ export async function POST(request: Request) {
     if (!ALLOWED_EXT.test(file.name)) {
       return NextResponse.json({ error: "Upload a CSV or Excel export (.csv, .xlsx)." }, { status: 415 });
     }
+    const { buf, name: filename } = await readUpload(file);
+    const rows = fileToRows(buf, filename);
+    // Toast/Square exports usually name the venue ("Main Street Grill - Austin, TX").
+    const venue = detectVenue(rows);
     const rawName = form.get("name");
-    const name = (typeof rawName === "string" && rawName.trim() ? rawName : file.name.replace(/\.[^.]+$/, ""))
+    const name = (
+      typeof rawName === "string" && rawName.trim()
+        ? rawName
+        : venue.name ?? filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")
+    )
       .trim()
       .slice(0, 120);
-    const buf = Buffer.from(await file.arrayBuffer());
-    const sales = parseSalesFile(buf, file.name, name);
-    return NextResponse.json({ sales, meta: { name, filename: file.name.slice(0, 200) } });
+    const sales = summarize(rows, name);
+    return NextResponse.json({
+      sales,
+      meta: { name, filename: filename.slice(0, 200), location: venue.location },
+    });
   } catch (err) {
+    if (err instanceof UploadTooLargeError) {
+      return NextResponse.json({ error: err.message }, { status: 413 });
+    }
     if (err instanceof SalesParseError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
