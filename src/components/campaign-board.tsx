@@ -14,11 +14,13 @@ import {
   Download,
   Megaphone,
   Copy,
-  Plug,
   CalendarPlus,
   Mail,
   MessageSquare,
   ExternalLink,
+  Share2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type {
   CampaignWithDays,
@@ -46,6 +48,9 @@ import { AssistantWidget } from "@/components/assistant-widget";
 import { CopyLink } from "@/components/copy-link";
 import { osClass } from "@/components/os-theme";
 import { floorScript } from "@/lib/calendar";
+import { ProofPanel } from "@/components/proof-panel";
+import type { ProofReport } from "@/lib/proof";
+import { valueOf, FLOW_THROUGH, TYPICAL_NET_MARGIN } from "@/lib/value";
 
 /** Never let a seasonal estimate read as if we know the weather that day. */
 function weatherTitle(w: DayWeather): string {
@@ -82,8 +87,9 @@ export function CampaignBoard({
   const [activating, setActivating] = React.useState(false);
   const [selIdx, setSelIdx] = React.useState(0);
   const [view, setView] = React.useState<
-    "calendar" | "intelligence" | "posters" | "distribution"
+    "calendar" | "intelligence" | "posters" | "distribution" | "proof"
   >("calendar");
+  const [proof, setProof] = React.useState<ProofReport | null>(initial.proof ?? null);
 
   const brand = campaign.brand;
   const brandColor = brand?.primary_color || "#C24A22";
@@ -128,7 +134,9 @@ export function CampaignBoard({
     { key: "intelligence", label: "Intelligence" },
     { key: "posters", label: "Posters" },
     { key: "distribution", label: "Distribution" },
+    { key: "proof", label: proof ? "Proof ✓" : "Proof" },
   ] as const;
+  const value = valueOf(v.expected, v.baseline, 49);
 
   return (
     <div className={osClass("min-h-screen")} style={{ ["--brand" as string]: brandColor }}>
@@ -253,6 +261,31 @@ export function CampaignBoard({
               <MoneyBar label="Last 30 days" value={v.baseline} max={maxBar} mint={false} />
               <MoneyBar label="Projected next 30" value={projectedTotal} max={maxBar} mint />
             </div>
+            {proof ? (
+              <button
+                onClick={() => setView("proof")}
+                className="mt-3 block w-full rounded border px-3 py-2 text-left text-[12.5px] leading-snug transition hover:brightness-110"
+                style={{ borderColor: "var(--os-mint)", color: "var(--fg)" }}
+              >
+                <span className="font-semibold" style={{ color: "var(--os-mint)" }}>
+                  {proof.verdict === "proven" ? "Proven" : "Measured"}: {proof.lift >= 0 ? "+" : "−"}
+                  {formatCompactCurrency(Math.abs(proof.lift))}
+                </span>{" "}
+                over {proof.days_covered} days on your register →
+              </button>
+            ) : (
+              value.profitPerYear > 0 && (
+                <p
+                  className="mt-3 text-[12.5px] leading-snug text-fg-muted"
+                  title={`Assumes ${Math.round(FLOW_THROUGH * 100)}% of each extra slow-hour dollar is kept after food cost (staff and rent are already paid), and a typical ${Math.round(TYPICAL_NET_MARGIN * 100)}% restaurant net margin. Kept up monthly.`}
+                >
+                  ≈ <span className="font-semibold text-fg">+{formatCompactCurrency(value.profitPerYear)} profit a year</span>{" "}
+                  if you keep it running — about{" "}
+                  <span className="font-semibold text-fg">{Math.round(value.profitShare * 100)}%</span> of what a
+                  restaurant your size typically keeps.
+                </p>
+              )
+            )}
           </div>
         </div>
 
@@ -314,6 +347,10 @@ export function CampaignBoard({
 
         {view === "distribution" && (
           <DistributionPanel campaign={campaign} days={days} brandColor={brandColor} />
+        )}
+
+        {view === "proof" && (
+          <ProofPanel slug={campaign.slug} startDate={campaign.start_date} proof={proof} editable={editable} onProof={setProof} />
         )}
       </main>
 
@@ -825,6 +862,138 @@ function clampStr(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 }
 
+/** Caption for an organic post: the day's line, the offer, the place. */
+function postCaption(day: CampaignDay, restaurant: string): string {
+  const tag = (s: string) => "#" + s.replace(/[^A-Za-z0-9]/g, "");
+  return [
+    day.copy,
+    "",
+    `${day.pct_off}% off ${day.item} · ${dowFull(day.date)} ${day.discount_window}`,
+    `📍 ${restaurant}`,
+    "",
+    [tag(restaurant), tag(day.item), "#DealOfTheDay", "#Foodie"].join(" "),
+  ].join("\n");
+}
+
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Organic posting with zero account linking. On phones the native share sheet
+ * hands the poster + caption straight to Instagram, Facebook, WhatsApp or
+ * Messages. On desktop: download + copied caption + the composer to paste into.
+ */
+function PostToday({ campaign, days }: { campaign: CampaignWithDays; days: CampaignDay[] }) {
+  const sorted = React.useMemo(() => [...days].sort((a, b) => a.date.localeCompare(b.date)), [days]);
+  const [idx, setIdx] = React.useState(() => {
+    const t = todayIso();
+    const i = sorted.findIndex((d) => d.date >= t);
+    return i === -1 ? 0 : i;
+  });
+  const [sharing, setSharing] = React.useState(false);
+  const day = sorted[idx];
+  if (!day) return null;
+  const caption = postCaption(day, campaign.restaurant_name);
+  const img = `${day.creative_url}${day.creative_url.includes("?") ? "&" : "?"}ar=4x5`;
+  const file = `${campaign.restaurant_slug}-${day.date}.png`;
+  const isToday = day.date === todayIso();
+
+  async function share() {
+    setSharing(true);
+    try {
+      const blob = await fetch(img).then((r) => r.blob());
+      const f = new File([blob], file, { type: "image/png" });
+      if (navigator.canShare?.({ files: [f] })) {
+        await navigator.share({ files: [f], text: caption, title: campaign.restaurant_name });
+        return;
+      }
+      // Desktop: save the poster and put the caption on the clipboard.
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = file;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      await navigator.clipboard.writeText(caption);
+      toast("Poster downloaded and caption copied — paste it into your post.", "success");
+    } catch (e) {
+      if ((e as Error)?.name !== "AbortError") toast("Couldn't share — try Download instead.", "error");
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="grid gap-0 sm:grid-cols-[220px_1fr]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={img} alt={`${day.item} poster`} className="aspect-[4/5] w-full object-cover" />
+        <div className="flex min-w-0 flex-col p-4">
+          <div className="flex items-center gap-2">
+            <Share2 className="size-4 text-fg-muted" />
+            <span className="text-sm font-semibold">{isToday ? "Post today's special" : "Post this special"}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                aria-label="Previous day"
+                disabled={idx === 0}
+                onClick={() => setIdx((i) => Math.max(0, i - 1))}
+                className="rounded p-1 text-fg-muted transition hover:text-fg disabled:opacity-30"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <span className="min-w-[68px] text-center font-mono text-[11px] text-fg-muted">
+                {formatShortDate(day.date)}
+              </span>
+              <button
+                aria-label="Next day"
+                disabled={idx === sorted.length - 1}
+                onClick={() => setIdx((i) => Math.min(sorted.length - 1, i + 1))}
+                className="rounded p-1 text-fg-muted transition hover:text-fg disabled:opacity-30"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          </div>
+          <pre className="mt-3 flex-1 whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-sans text-[12.5px] leading-relaxed text-fg-muted">
+            {caption}
+          </pre>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" onClick={share} loading={sharing}>
+              <Share2 className="size-3.5" /> Share to Instagram, Facebook…
+            </Button>
+            <a href={img} download={file}>
+              <Button size="sm" variant="secondary">
+                <Download className="size-3.5" /> Poster
+              </Button>
+            </a>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigator.clipboard.writeText(caption).then(() => toast("Caption copied.", "success"))}
+            >
+              <Copy className="size-3.5" /> Caption
+            </Button>
+          </div>
+          <p className="mt-2 text-[11px] text-fg-subtle text-pretty">
+            No account linking. On your phone, Share opens Instagram, Facebook or WhatsApp with the poster
+            and caption ready. Post {DAYPART_POST_HINT[day.daypart]}.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** When to post for each daypart — early enough to change someone's plans. */
+const DAYPART_POST_HINT: Record<Daypart, string> = {
+  Breakfast: "the evening before",
+  Lunch: "around 10 AM",
+  Afternoon: "just before noon",
+  Dinner: "around 3 PM",
+  "Late-Night": "around 6 PM",
+};
+
 function DistributionPanel({
   campaign,
   days,
@@ -862,20 +1031,17 @@ function DistributionPanel({
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-ember-gradient text-white">
-            <Megaphone className="size-4" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold">Publish-ready ad kit</div>
-            <p className="text-xs text-fg-muted text-pretty">
-              Every day&apos;s poster is exported in each channel&apos;s required sizes with
-              character-limited ad copy. Connect an ad account to auto-publish, or download and upload.
-            </p>
-          </div>
+      <PostToday campaign={campaign} days={days} />
+
+      <div className="flex items-center gap-3 pt-2">
+        <Megaphone className="size-4 text-fg-subtle" />
+        <div>
+          <div className="text-sm font-semibold">Boost with paid ads (optional)</div>
+          <p className="text-xs text-fg-muted text-pretty">
+            Every poster pre-sized for each platform, with ad copy inside its character limits.
+          </p>
         </div>
-      </Card>
+      </div>
 
       {/* channels */}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -892,7 +1058,6 @@ function DistributionPanel({
                 <div className="text-sm font-semibold leading-tight">{ch.name}</div>
                 <div className="text-[11px] text-fg-subtle">{ch.note}</div>
               </div>
-              <Badge tone="muted" className="ml-auto">Not connected</Badge>
             </div>
             <div className="mb-3 flex flex-wrap gap-1.5">
               {ch.formats.map((f) => (
@@ -907,7 +1072,7 @@ function DistributionPanel({
               ))}
             </div>
             <Button variant="secondary" size="sm" className="w-full" onClick={() => setPublishing(ch)}>
-              <Plug className="size-3.5" /> Publish to {ch.name}
+              <Megaphone className="size-3.5" /> Set up a {ch.name} ad
             </Button>
           </Card>
         ))}
@@ -925,13 +1090,9 @@ function DistributionPanel({
         <CopyBlock label="Meta / Instagram — Primary text" lines={[metaPrimary]} onCopy={copyText} />
       </Card>
 
-      <p className="px-1 text-center text-xs text-fg-subtle text-pretty">
-        One-click OAuth auto-posting requires your own Meta / Google ad accounts — until then,
-        &quot;Publish&quot; walks you through a 2-minute manual upload with everything pre-made.
-      </p>
 
       {/* Publish workflow — everything needed to go live on this channel NOW. */}
-      <Modal open={!!publishing} onClose={() => setPublishing(null)} title={publishing ? `Publish to ${publishing.name}` : ""} className={osClass()}>
+      <Modal open={!!publishing} onClose={() => setPublishing(null)} title={publishing ? `Set up a ${publishing.name} ad` : ""} className={osClass()}>
         {publishing && (
           <div className="space-y-4">
             <PublishStep n={1} title="Download the creatives (pre-sized)">
@@ -977,10 +1138,8 @@ function DistributionPanel({
             </PublishStep>
 
             <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] text-fg-subtle text-pretty">
-              <span className="font-medium text-fg-muted">Why no one-click connect yet? </span>
-              Auto-publishing through the {publishing.name} API requires your own approved developer
-              app and ad account — credentials only you can create. The pipeline on Swell&apos;s side
-              is built; this guided upload is the honest bridge until you connect them.
+              Paid ads spend money from your own ad account, so you place them yourself — Swell never
+              touches your budget. For free posting, use &ldquo;Share&rdquo; above.
             </p>
           </div>
         )}

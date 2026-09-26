@@ -224,6 +224,8 @@ export type Campaign = {
   context: ContextSummary | null; // live weather/events summary
   created_at: string;
   published_at: string | null;
+  /** Measured lift after the campaign ran (Proof). null until the owner uploads results. */
+  proof?: import("./proof").ProofReport | null;
 };
 
 /**

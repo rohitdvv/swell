@@ -71,3 +71,31 @@ describe("request schemas — hostile clients", () => {
     expect(AssistantBodySchema.safeParse({ slug: "demo", question: "x".repeat(501) }).success).toBe(false);
   });
 });
+
+describe("Proof on a real POS export", () => {
+  it("measures a campaign from the same export format owners upload", async () => {
+    const { fileToRows, summarize, itemLines } = await import("@/lib/csv");
+    const { measureProof } = await import("@/lib/proof");
+    const { csv } = buildSampleCsv(75);
+    const rows = fileToRows(Buffer.from(csv), "export.csv");
+    const full = summarize(rows, "Osteria Lume");
+    const daily = full.daily!;
+    const start = daily[daily.length - 21].date; // last 3 weeks = "the campaign"
+    const before = { ...full, daily: daily.filter((d) => d.date < start) };
+    const model = trainSalesModel(before)!;
+    const lines = itemLines(rows);
+    expect(lines.length).toBeGreaterThan(1000);
+    expect(lines.some((l) => l.daypart === "Lunch")).toBe(true);
+
+    const top = full.top_items[0].name;
+    const days = daily
+      .filter((d) => d.date >= start)
+      .map((d) => ({ date: d.date, item: top, daypart: "Dinner", projected_revenue: 100 })) as never;
+    const p = measureProof({ model, days, after: daily, lines, campaignStart: start });
+    expect(p.days_covered).toBe(21);
+    // No campaign actually ran in this export: the honest answer is "not proven".
+    expect(p.low80).toBeLessThanOrEqual(0);
+    expect(p.window_totals?.days).toBe(21);
+    expect(p.windows.every((w) => w.usual! > 0)).toBe(true);
+  });
+});

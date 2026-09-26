@@ -7,6 +7,7 @@ import type {
   Daypart,
 } from "./types";
 import { DAYPARTS } from "./types";
+import type { ItemLine } from "./proof";
 
 const DOW_NAMES: DayOfWeek[] = [
   "Sunday",
@@ -254,6 +255,35 @@ export function summarize(
     voids: { count: voidCount, amount: round2(voidAmount) },
     payment_mix,
   };
+}
+
+/** One sold line item — what Proof needs to see promo windows, not just totals. */
+export function itemLines(rows: RawRow[]): ItemLine[] {
+  if (!rows.length) return [];
+  const headers = Object.keys(rows[0]);
+  const kDate = findKey(headers, [/^date$/, /businessdate/, /orderdate/, /date/, /day/]);
+  const kTime = findKey(headers, [/^time$/, /ordertime/, /time/, /openedat/, /createdat/]);
+  const kItem = findKey(headers, [/menuitem/, /itemname/, /^item$/, /product/, /^name$/, /item/]);
+  const kQty = findKey(headers, [/quantity/, /^qty$/, /qtysold/, /count/, /units/]);
+  const kNet = findKey(headers, [/netsales/, /netamount/, /netprice/, /^net$/, /amount/, /^sales$/, /total/, /gross/]);
+  const kVoid = findKey(headers, [/voided/, /^void$/, /refunded/, /refund/]);
+  if (!kDate || !kItem) return [];
+  const out: ItemLine[] = [];
+  for (const r of rows) {
+    const date = normalizeDate(r[kDate]);
+    const item = String(r[kItem] ?? "").trim();
+    if (!date || !item) continue;
+    if (kVoid && /^(y|yes|true|1|void|refunded)/i.test(String(r[kVoid] ?? "").trim())) continue;
+    const hour = kTime ? parseHour(r[kTime]) : null;
+    out.push({
+      date,
+      daypart: hour == null ? null : daypartFromHour(hour),
+      item,
+      qty: kQty ? parseNumber(r[kQty]) || 1 : 1,
+      net: kNet ? parseNumber(r[kNet]) : 0,
+    });
+  }
+  return out;
 }
 
 export function parseSalesFile(

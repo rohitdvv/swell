@@ -238,6 +238,7 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     ["campaign_days", "context_note TEXT"],
     ["campaign_days", "expected_covers REAL NOT NULL DEFAULT 0"],
     ["campaigns", "owner_email TEXT"],
+    ["campaigns", "proof_json TEXT"],
   ];
   for (const [table, col] of cols) {
     try {
@@ -293,6 +294,7 @@ function rowToCampaign(r: Row): Campaign {
     sales_summary: parse(r.sales_json, {} as ParsedSalesSummary),
     created_at: r.created_at as string,
     published_at: (r.published_at as string) ?? null,
+    proof: parse(r.proof_json, null as Campaign["proof"]),
   };
 }
 
@@ -466,6 +468,11 @@ export const repo = {
    * The upsert is a single statement, so concurrent requests can't both slip
    * under the limit. Old windows are swept opportunistically.
    */
+  /** Save a Proof report (measured lift) on a campaign. */
+  async setProof(campaignId: string, proof: unknown): Promise<void> {
+    await q(`UPDATE campaigns SET proof_json=$2 WHERE id=$1`, [campaignId, JSON.stringify(proof)]);
+  },
+
   /** Round-trips the database. Returns which backend answered. */
   async ping(): Promise<Backend["kind"]> {
     await one(`SELECT 1 AS ok`, []);
