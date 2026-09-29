@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStripe } from "@/lib/billing/stripe";
+import { getStripe, adoptSetupPaymentMethod } from "@/lib/billing/stripe";
 import { repo } from "@/lib/db";
 import { getAccountEmail } from "@/lib/billing/account";
 import type { PlanId, Interval } from "@/lib/billing/plans";
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Session does not match account." }, { status: 403 });
     }
 
+    await adoptSetupPaymentMethod(stripe, session);
     await repo.upsertSubscription({
       email: signedInEmail,
       plan: (session.metadata?.plan as PlanId) || "pro",

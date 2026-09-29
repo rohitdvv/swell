@@ -108,7 +108,7 @@ export type User = {
 // ---- Billing / subscriptions --------------------------------
 export type Subscription = {
   email: string;
-  plan: "starter" | "pro" | "agency";
+  plan: "starter" | "pro" | "agency" | "performance";
   interval: "monthly" | "annual";
   status: "active" | "trialing" | "past_due" | "canceled";
   mode: "live" | "demo";

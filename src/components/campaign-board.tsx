@@ -49,6 +49,7 @@ import { CopyLink } from "@/components/copy-link";
 import { osClass } from "@/components/os-theme";
 import { floorScript } from "@/lib/calendar";
 import { ProofPanel } from "@/components/proof-panel";
+import { StaffingPanel } from "@/components/staffing-panel";
 import type { ProofReport } from "@/lib/proof";
 import { valueOf, FLOW_THROUGH, TYPICAL_NET_MARGIN } from "@/lib/value";
 
@@ -87,7 +88,7 @@ export function CampaignBoard({
   const [activating, setActivating] = React.useState(false);
   const [selIdx, setSelIdx] = React.useState(0);
   const [view, setView] = React.useState<
-    "calendar" | "intelligence" | "posters" | "distribution" | "proof"
+    "calendar" | "intelligence" | "staffing" | "posters" | "distribution" | "proof"
   >("calendar");
   const [proof, setProof] = React.useState<ProofReport | null>(initial.proof ?? null);
 
@@ -132,6 +133,7 @@ export function CampaignBoard({
   const TABS = [
     { key: "calendar", label: "Calendar" },
     { key: "intelligence", label: "Intelligence" },
+    { key: "staffing", label: "Staffing" },
     { key: "posters", label: "Posters" },
     { key: "distribution", label: "Distribution" },
     { key: "proof", label: proof ? "Proof ✓" : "Proof" },
@@ -329,6 +331,8 @@ export function CampaignBoard({
         )}
 
         {view === "intelligence" && <CampaignIntelligence campaign={{ ...campaign, days }} />}
+
+        {view === "staffing" && <StaffingPanel campaign={{ ...campaign, days }} />}
 
         {view === "posters" && (
           <div>

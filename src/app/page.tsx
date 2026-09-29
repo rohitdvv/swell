@@ -52,6 +52,9 @@ export default async function Landing() {
           <Link href="#proof" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
             Proof
           </Link>
+          <Link href="/accuracy" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
+            Accuracy
+          </Link>
           <Link href="/demo" className="hidden hover:text-fg sm:block" style={{ color: OS.muted }}>
             Sample campaign
           </Link>
@@ -402,6 +405,9 @@ export default async function Landing() {
           <Link href="/pricing" style={{ color: OS.muted }}>
             Pricing
           </Link>
+          <Link href="/accuracy" style={{ color: OS.muted }}>
+            Accuracy
+          </Link>
           <Link href="/pitch" style={{ color: OS.muted }}>
             Pitch
           </Link>
@@ -462,7 +468,7 @@ const PROOF_POINTS = [
   "The expected line comes from a model trained only on sales before the campaign",
   "Promo dishes counted inside their windows against the same weekday before",
   "A verdict you can trust: proven, promising, no lift, or too early",
-  "Tested: on data with no real effect, it wrongly says 'proven' about 1 time in 12",
+  "Tested in public: on campaigns that did nothing, it wrongly says 'proven' about 1 time in 14",
 ];
 
 /** Posters from the live demo, fanned like a stack of prints on the pass. */

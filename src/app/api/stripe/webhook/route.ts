@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripe } from "@/lib/billing/stripe";
+import { getStripe, adoptSetupPaymentMethod } from "@/lib/billing/stripe";
 import { repo } from "@/lib/db";
 import type { PlanId, Interval } from "@/lib/billing/plans";
 
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
         const plan = (s.metadata?.plan as PlanId) || "pro";
         const interval = (s.metadata?.interval as Interval) || "monthly";
         if (email) {
+          await adoptSetupPaymentMethod(stripe, s);
           await repo.upsertSubscription({
             email,
             plan,

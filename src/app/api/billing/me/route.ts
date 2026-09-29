@@ -16,6 +16,7 @@ export async function GET() {
   const owned = account.email ? await repo.ownedCampaigns(account.email) : [];
   const usage = usageOf(owned);
   const user = account.email ? await repo.getUser(account.email) : null;
+  const charges = account.email && sub?.plan === "performance" ? await repo.listCharges(account.email) : [];
 
   return NextResponse.json({
     email: account.email,
@@ -29,6 +30,14 @@ export async function GET() {
       restaurants: usage.restaurants,
       restaurantLimit: tier.limits.restaurants,
     },
+    charges: charges.map((c) => ({
+      slug: c.slug,
+      restaurant: c.restaurant_name,
+      amount: c.amount,
+      status: c.status,
+      reason: c.reason,
+      date: c.updated_at,
+    })),
     stripeConfigured: stripeConfigured(),
   });
 }

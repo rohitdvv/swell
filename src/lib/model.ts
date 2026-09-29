@@ -72,6 +72,14 @@ export type CrossValidation = {
   mase: number;
   /** Every candidate's out-of-sample MAE — the selection is auditable. */
   candidates: { name: ModelName; mae: number }[];
+  /**
+   * How much the chosen model's errors move together within one forecast run
+   * (intraclass correlation across walk-forward folds, 0..0.8). When the model
+   * misjudges the level, every day in the run is off the same way — so errors
+   * summed over many days don't cancel as independent errors would. Proof
+   * uses this to size its range honestly.
+   */
+  errorCorrelation: number;
 };
 
 /** Interval half-widths for one horizon band, from errors at that horizon. */
@@ -320,6 +328,27 @@ function calibrateBands(residuals: Residual[]): HorizonBand[] {
   return out;
 }
 
+/** One-way ANOVA intraclass correlation of residuals grouped by fold. */
+export function foldCorrelation(perFold: Residual[][]): number {
+  const groups = perFold.map((f) => f.map((x) => x.r)).filter((g) => g.length >= 2);
+  const k = groups.length;
+  const N = groups.reduce((s, g) => s + g.length, 0);
+  if (k < 3 || N - k < 2) return 0.3; // too little evidence to estimate: assume moderate, not zero
+  const grand = groups.flat().reduce((a, b) => a + b, 0) / N;
+  let ssw = 0;
+  let ssb = 0;
+  for (const g of groups) {
+    const m = g.reduce((a, b) => a + b, 0) / g.length;
+    ssb += g.length * (m - grand) ** 2;
+    for (const x of g) ssw += (x - m) ** 2;
+  }
+  const msw = ssw / (N - k);
+  const msb = ssb / (k - 1);
+  const n0 = (N - groups.reduce((s, g) => s + g.length ** 2, 0) / N) / (k - 1);
+  const icc = (msb - msw) / (msb + (n0 - 1) * msw);
+  return Math.min(0.8, Math.max(0, Number.isFinite(icc) ? icc : 0.3));
+}
+
 function bandFor(bands: HorizonBand[], h: number): HorizonBand {
   return bands.find((b) => h <= b.to) ?? bands[bands.length - 1];
 }
@@ -463,6 +492,7 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
     mae: Math.round(cvMae),
     mape: cvMape,
     cv: {
+      errorCorrelation: foldCorrelation(best.perFold),
       folds: folds.length,
       testDays: flat.length,
       mae: Math.round(cvMae),

@@ -317,6 +317,7 @@ or per IP, per window.
 | `/api/creative/[file]` | GET | viewer | 400/min/IP | poster/ad PNG (`?ratio=`) |
 | `/api/campaigns/[slug]/proof` | POST | owner | 20/h | upload post-campaign export → measured lift (Proof) |
 | `/api/runs` | GET | user | — | this account's generation history |
+| `/accuracy` | page | public | — | live Proof aggregates + reproducible simulation evidence |
 | `/api/assistant` | POST | viewer | per user + IP | guarded, grounded Q&A over one campaign |
 | `/api/health` | GET | public | 60/min/IP | database + LLM status, commit SHA (no secrets) |
 
@@ -359,6 +360,38 @@ verdict: < 7 days → too early · low80 > 0 → proven · lift > 0 → promisin
 The uploaded file never trains the model it is judged against. Owner-only
 (`POST /api/campaigns/[slug]/proof`, 20/h), stored as `campaigns.proof_json`, shown on the
 Proof tab and the money card.
+
+## Staffing (`src/lib/staffing.ts`)
+
+Labor hours per open daypart per day = expected sales ÷ target sales-per-labor-hour (owner-set,
+default $55), never below a minimum crew for the window's hours. Expected sales are the **high
+end of the 80% forecast range** split by the venue's daypart mix, plus the promo's projected
+guests — so the plan rarely runs short. Compared with a flat schedule sized for the month's
+average day, it reports the hours a flat schedule wastes on quiet days and lacks on busy ones.
+
+## Pay for proof (`src/lib/billing/{performance,settle}.ts`)
+
+```
+Proof upload ─▶ settleProof(): only for accounts on the "performance" plan
+  verdict proven? ─ no ─▶ charge row status "none", $0
+        │ yes
+  fee = min(15% × low80, $1,500 cap − already billed this month)
+  campaign fully run (≥ 28 days measured)? ─ no ─▶ status "estimate" (updates on re-measure)
+        │ yes
+  demo mode ─▶ "demo" · Stripe ─▶ invoice item + invoice, idempotency keys per campaign ─▶ "invoiced"
+```
+
+`performance_charges` has one row per campaign; the upsert refuses to overwrite an invoiced
+row, and Stripe idempotency keys make a racing double upload charge once. Checkout for this
+plan is Stripe **setup** mode (save a card, charge nothing), and the saved card is made the
+customer's default for invoices on return / webhook. Tested against a real embedded Postgres
+in `test/settle.test.ts`.
+
+## Accuracy record (`/accuracy`, `src/lib/evidence.ts`)
+
+Live aggregates of every real Proof report (never below 3 campaigns, never by name) plus the
+simulation evidence. `test/evidence.test.ts` recomputes every simulated figure exactly from the
+same seeds on each CI run, so the public page cannot drift from what the code does.
 
 ## Security model
 

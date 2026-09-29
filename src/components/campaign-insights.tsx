@@ -355,7 +355,10 @@ function ModelCard({ model, brand }: { model: SalesModel; brand: string }) {
             curve.
             {model.interval.coverage95 !== null &&
               ` The 95% range held ${(model.interval.coverage95 * 100).toFixed(0)}% of the time in backtest.`}{" "}
-            No forecast is exact — this tells you how much to trust it.
+            No forecast is exact — this tells you how much to trust it.{" "}
+            <a href="/accuracy" className="underline">
+              Swell&apos;s public accuracy record →
+            </a>
           </p>
         </div>
       </div>

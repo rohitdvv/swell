@@ -69,7 +69,7 @@ NYC trattoria export is parsed live and turned into a full campaign. No CSV or L
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 137 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
+| `npm test` | 157 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -261,8 +261,11 @@ Swell compares each campaign day with what the forecasting model — trained onl
 *before* the campaign — says would have happened without it (the counterfactual), and reports
 the lift with an 80% range built from the model's calibrated per-day intervals. It also counts
 each promo dish inside its window against the same weekday before. Verdict: **proven**,
-**promising**, **no lift** or **too early**. On simulated restaurants with no real effect, the
-range contained zero 48/60 times and wrongly said "proven" 5/60 (`test/proof.test.ts`).
+**promising**, **no lift** or **too early**. "Proven" needs ~95% confidence the lift is above
+zero, and the range accounts for errors that move together across days. On 180 simulated
+campaigns that did nothing, it wrongly said "proven" 13 times (7.2%) and the 80% range
+contained zero 79.4% of the time; campaigns adding ~10% a day were proven 180/180. These
+figures are public at `/accuracy` and recomputed exactly by `test/evidence.test.ts`.
 Code: `src/lib/proof.ts`, `api/campaigns/[slug]/proof`, `components/proof-panel.tsx`.
 
 **What the number is worth.** The money card translates the slow-hour lift into profit a year
@@ -273,6 +276,13 @@ an extra slow-hour dollar kept after food cost, 5% typical net margin — shown 
 phone, Share hands the poster + caption to Instagram, Facebook or WhatsApp through the native
 share sheet; on desktop it downloads the poster and copies the caption. Paid ads are an
 optional "Boost" section.
+
+**Staffing.** The Staffing tab turns the forecast into labor hours per daypart for all 30 days
+(staffed to the high end of the range plus promo guests), and shows the hours a flat schedule
+wastes on quiet days — owner-adjustable sales-per-labor-hour, wage and minimum crew.
+
+**Pay for proof.** A $0/month plan: 15% of the cautious end of each *proven* lift, capped at
+$1,500 a month, invoiced once a campaign has fully run. No lift, no bill. See ARCHITECTURE.md.
 
 ## How accurate is the forecast?
 
@@ -286,9 +296,10 @@ about the rest.**
 - **Benchmarked.** Every model is scored against “same as last week” (skill %, MASE).
 - **Calibrated ranges.** Split-conformal intervals, calibrated separately for week 1, week 2 and
   weeks 3–4, so an “80% range” contains the real number ~80% of the time.
-- **Proven in tests.** Across 40 simulated restaurants and 1,200 future days, the 80% range covered
-  82.8% and the 95% range 97.3%; the model beat the naive benchmark 40/40. Forecasts are
-  identical in every timezone.
+- **Proven in tests, published.** On 1,800 future days (60 restaurants, 45–104 days of history)
+  the 80% range held 81.6% and the 95% range 94.9%; with only 21–44 days, 86.8% / 95.7% (wider,
+  as it should be). Beat "same as last week" for 59/60. Live at `/accuracy`, recomputed exactly
+  by `test/evidence.test.ts`. Forecasts are identical in every timezone.
 
 ---
 
@@ -407,5 +418,6 @@ src/
 test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
   quota.test.ts proof.test.ts value.test.ts toast-export.test.ts geo.test.ts
+  staffing.test.ts performance.test.ts settle.test.ts evidence.test.ts helpers/synthetic.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

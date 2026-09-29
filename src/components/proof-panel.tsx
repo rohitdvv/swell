@@ -49,6 +49,7 @@ export function ProofPanel({
   onProof: (p: ProofReport) => void;
 }) {
   const [busy, setBusy] = React.useState(false);
+  const [charge, setCharge] = React.useState<{ amount: number; status: string; reason: string } | null>(null);
   const input = React.useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
@@ -60,6 +61,7 @@ export function ProofPanel({
       const data = await res.json();
       if (!res.ok || !data.proof) throw new Error(data.error || "Could not measure this file.");
       onProof(data.proof);
+      setCharge(data.charge ?? null);
       toast("Measured against your register.", "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not measure this file.", "error");
@@ -146,6 +148,16 @@ export function ProofPanel({
               80% range {signed(proof.low80)} to {signed(proof.high80)} · {proof.days_covered} campaign days measured
             </div>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-fg-muted text-pretty">{v.body}</p>
+            {charge && (
+              <p className="mt-3 max-w-xl rounded bg-surface-2 px-3 py-2 text-xs text-fg-muted text-pretty">
+                <span className="font-semibold text-fg">Pay for proof: </span>
+                {charge.status === "none"
+                  ? "nothing to bill — only proven results are charged."
+                  : charge.status === "estimate"
+                    ? `about $${charge.amount.toLocaleString()} if this holds (${charge.reason}) — billed only once the campaign has fully run.`
+                    : `$${charge.amount.toLocaleString()} ${charge.status === "failed" ? "— invoicing failed, we'll retry" : "billed"}. ${charge.reason}`}
+              </p>
+            )}
           </div>
           <div className="grid shrink-0 grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <Stat label="Actual sales" value={formatCompactCurrency(proof.actual)} />

@@ -27,6 +27,30 @@ export async function POST(request: Request) {
   const origin = new URL(request.url).origin;
   const stripe = getStripe();
 
+  // ---- Pay for proof: no subscription, just a saved card for proven results ----
+  if (stripe && p.performance) {
+    try {
+      // Setup mode needs an existing customer; reuse theirs if we have one.
+      const existing = await repo.getSubscription(email);
+      const customer =
+        existing?.stripe_customer_id ??
+        (await stripe.customers.create({ email, metadata: { email } }, { idempotencyKey: `swell-customer-${email}` })).id;
+      const session = await stripe.checkout.sessions.create({
+        mode: "setup",
+        currency: "usd",
+        customer,
+        client_reference_id: email,
+        metadata: { plan, interval: "monthly", email },
+        success_url: `${origin}/account?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/pricing?checkout=cancelled`,
+      });
+      return NextResponse.json({ url: session.url, mode: "live" });
+    } catch (err) {
+      console.error("stripe setup checkout error", err);
+      return NextResponse.json({ error: "Could not start checkout." }, { status: 500 });
+    }
+  }
+
   // ---- Live Stripe (test mode with a test key works identically) ----
   if (stripe) {
     const amount = interval === "annual" ? p.annual : p.monthly;

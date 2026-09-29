@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { ProofReport } from "./proof";
 import type {
   Campaign,
   CampaignDay,
@@ -202,6 +203,23 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (key, window_start)
     )`);
+  // Pay-for-proof: one row per campaign, never two — the fee for a campaign
+  // is updated while it's an estimate and frozen once invoiced.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS performance_charges (
+      campaign_id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      restaurant_name TEXT NOT NULL,
+      basis INTEGER NOT NULL,
+      rate REAL NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      stripe_invoice_id TEXT,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
   await exec(`
     CREATE TABLE IF NOT EXISTS marketplace_signals (
       restaurant_key TEXT PRIMARY KEY,
@@ -295,6 +313,39 @@ function rowToCampaign(r: Row): Campaign {
     created_at: r.created_at as string,
     published_at: (r.published_at as string) ?? null,
     proof: parse(r.proof_json, null as Campaign["proof"]),
+  };
+}
+
+export type PerformanceCharge = {
+  campaign_id: string;
+  email: string;
+  slug: string;
+  restaurant_name: string;
+  basis: number;
+  rate: number;
+  amount: number;
+  /** estimate → (campaign still running) · invoiced / demo → final · none → not proven */
+  status: "estimate" | "invoiced" | "demo" | "none" | "failed";
+  stripe_invoice_id: string | null;
+  reason: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function rowToCharge(r: Row): PerformanceCharge {
+  return {
+    campaign_id: r.campaign_id as string,
+    email: r.email as string,
+    slug: r.slug as string,
+    restaurant_name: r.restaurant_name as string,
+    basis: num(r.basis),
+    rate: num(r.rate),
+    amount: num(r.amount),
+    status: r.status as PerformanceCharge["status"],
+    stripe_invoice_id: (r.stripe_invoice_id as string) ?? null,
+    reason: r.reason as string,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
   };
 }
 
@@ -468,9 +519,53 @@ export const repo = {
    * The upsert is a single statement, so concurrent requests can't both slip
    * under the limit. Old windows are swept opportunistically.
    */
+  /** Every real Proof report (the demo excluded) — only ever shown in aggregate. */
+  async listProofs(): Promise<ProofReport[]> {
+    const rows = await q(`SELECT proof_json FROM campaigns WHERE proof_json IS NOT NULL AND slug <> 'demo'`);
+    return rows.map((r) => JSON.parse(r.proof_json as string) as ProofReport);
+  },
+
   /** Save a Proof report (measured lift) on a campaign. */
   async setProof(campaignId: string, proof: unknown): Promise<void> {
     await q(`UPDATE campaigns SET proof_json=$2 WHERE id=$1`, [campaignId, JSON.stringify(proof)]);
+  },
+
+  // ---- pay-for-proof charges ----
+  async getCharge(campaignId: string): Promise<PerformanceCharge | null> {
+    const r = await one(`SELECT * FROM performance_charges WHERE campaign_id=$1`, [campaignId]);
+    return r ? rowToCharge(r) : null;
+  },
+
+  async listCharges(email: string): Promise<PerformanceCharge[]> {
+    const rows = await q(`SELECT * FROM performance_charges WHERE email=$1 ORDER BY created_at DESC`, [email]);
+    return rows.map(rowToCharge);
+  },
+
+  /** Dollars already invoiced to this account in the current calendar month (for the cap). */
+  async billedThisMonth(email: string, excludeCampaignId: string): Promise<number> {
+    const month = new Date().toISOString().slice(0, 7);
+    const r = await one(
+      `SELECT COALESCE(SUM(amount),0) s FROM performance_charges
+        WHERE email=$1 AND campaign_id<>$2 AND status IN ('invoiced','demo') AND substr(updated_at,1,7)=$3`,
+      [email, excludeCampaignId, month]
+    );
+    return num(r?.s);
+  },
+
+  /** Insert or update a charge — but never touch one that is already invoiced. */
+  async upsertCharge(c: Omit<PerformanceCharge, "created_at" | "updated_at">): Promise<PerformanceCharge> {
+    const now = new Date().toISOString();
+    await q(
+      `INSERT INTO performance_charges
+        (campaign_id, email, slug, restaurant_name, basis, rate, amount, status, stripe_invoice_id, reason, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+       ON CONFLICT (campaign_id) DO UPDATE SET
+         basis=EXCLUDED.basis, rate=EXCLUDED.rate, amount=EXCLUDED.amount, status=EXCLUDED.status,
+         stripe_invoice_id=EXCLUDED.stripe_invoice_id, reason=EXCLUDED.reason, updated_at=EXCLUDED.updated_at
+       WHERE performance_charges.status NOT IN ('invoiced','demo')`,
+      [c.campaign_id, c.email, c.slug, c.restaurant_name, c.basis, c.rate, c.amount, c.status, c.stripe_invoice_id, c.reason, now]
+    );
+    return (await this.getCharge(c.campaign_id))!;
   },
 
   /** Round-trips the database. Returns which backend answered. */

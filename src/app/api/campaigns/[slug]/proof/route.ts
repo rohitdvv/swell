@@ -7,10 +7,10 @@ import { measureProof } from "@/lib/proof";
 import { getAccountEmail } from "@/lib/billing/account";
 import { rateLimit } from "@/lib/rate-limit";
 import { readUpload, MAX_UPLOAD_BYTES, ALLOWED_EXT, UploadTooLargeError } from "@/lib/upload";
+import { settleProof } from "@/lib/billing/settle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 
 /**
  * Proof: the owner uploads their POS export covering the campaign. We measure
@@ -78,7 +78,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       );
     }
     await repo.setProof(campaign!.id, report);
-    return NextResponse.json({ proof: report });
+    // Pay-for-proof accounts: estimate, or invoice once the campaign has fully run.
+    const charge = await settleProof(campaign!, report, email);
+    return NextResponse.json({
+      proof: report,
+      charge: charge && { amount: charge.amount, status: charge.status, reason: charge.reason },
+    });
   } catch (err) {
     if (err instanceof UploadTooLargeError) return NextResponse.json({ error: err.message }, { status: 413 });
     if (err instanceof SalesParseError) return NextResponse.json({ error: err.message }, { status: 400 });

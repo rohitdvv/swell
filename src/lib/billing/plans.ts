@@ -4,7 +4,7 @@
 // Stripe Price IDs are read from env when running against real Stripe.
 // ============================================================
 
-export type PlanId = "starter" | "pro" | "agency";
+export type PlanId = "starter" | "pro" | "agency" | "performance";
 export type Interval = "monthly" | "annual";
 
 export type Plan = {
@@ -23,6 +23,8 @@ export type Plan = {
   };
   features: string[];
   priceIds: { monthly?: string; annual?: string };
+  /** Pay-for-proof plans: no subscription fee, a share of proven lift instead. */
+  performance?: { rate: number; monthlyCap: number };
 };
 
 export const PLANS: Record<PlanId, Plan> = {
@@ -103,6 +105,29 @@ export const PLANS: Record<PlanId, Plan> = {
       monthly: process.env.STRIPE_PRICE_AGENCY_MONTHLY,
       annual: process.env.STRIPE_PRICE_AGENCY_ANNUAL,
     },
+  },
+  performance: {
+    id: "performance",
+    name: "Pay for proof",
+    tagline: "No lift, no bill.",
+    monthly: 0,
+    annual: 0,
+    limits: {
+      restaurants: 3,
+      campaignsPerMonth: -1,
+      adKit: true,
+      autoPublish: false,
+      whiteLabel: false,
+    },
+    features: [
+      "$0 a month — no subscription",
+      "15% of lift your register proves, billed on the cautious end of the range",
+      "Capped at $1,500 a month per account",
+      "Nothing billed for 'promising', 'no lift' or 'too early'",
+      "Up to 3 restaurants, unlimited campaigns, Ad Kit",
+    ],
+    priceIds: {},
+    performance: { rate: 0.15, monthlyCap: 1500 },
   },
 };
 

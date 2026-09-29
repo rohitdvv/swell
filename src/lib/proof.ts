@@ -9,7 +9,8 @@ import type { SalesModel } from "./model";
 // what happened with what the forecasting model — trained only on the sales
 // BEFORE the campaign — says would have happened without it (the
 // counterfactual). The gap is the measured lift, reported with an 80% range
-// built from the model's own calibrated (conformal) per-day intervals.
+// built from the model's own calibrated (conformal) per-day intervals and the
+// measured correlation of its errors across days.
 //
 // A second, more direct read: for each promo, units of that dish sold inside
 // its window vs the same weekday + window before the campaign.
@@ -42,10 +43,13 @@ export type ProofReport = {
   daily: Array<{ date: string; actual: number; expected: number }>;
   windows: WindowRead[];
   window_totals: { days: number; sold: number; usual: number } | null;
+  /** proven: ~95% sure the lift is above zero · promising: likely positive · else no lift / too early */
   verdict: "proven" | "promising" | "too-early" | "no-lift";
 };
 
 const Z80 = 1.2816;
+/** "Proven" needs ~95% one-sided confidence the lift is above zero — it can trigger a charge. */
+const Z_PROVEN = 1.6449;
 const MIN_DAYS = 7;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -66,7 +70,8 @@ export function measureProof(input: {
   // ---- revenue vs counterfactual ---------------------------------
   let actual = 0;
   let counterfactual = 0;
-  let variance = 0;
+  let sumSd = 0;
+  let sumVar = 0;
   const daily: ProofReport["daily"] = [];
   for (const d of campaignDays) {
     const a = byDate.get(d.date)!;
@@ -75,11 +80,16 @@ export function measureProof(input: {
     const sd = (iv.high - iv.low) / 2 / Z80; // per-day spread implied by the calibrated band
     actual += a;
     counterfactual += e;
-    variance += sd * sd;
+    sumSd += sd;
+    sumVar += sd * sd;
     daily.push({ date: d.date, actual: Math.round(a), expected: Math.round(e) });
   }
   const lift = actual - counterfactual;
-  const half = Z80 * Math.sqrt(variance);
+  // Errors within one forecast run are correlated (a misjudged level shifts
+  // every day alike), so the summed error is wider than independent days
+  // would suggest: Var(Σ) = (1−ρ)·Σσ² + ρ·(Σσ)².
+  const rho = model.cv?.errorCorrelation ?? 0.3;
+  const half = Z80 * Math.sqrt((1 - rho) * sumVar + rho * sumSd * sumSd);
   const projected = campaignDays.reduce((s, d) => s + d.projected_revenue, 0);
 
   // ---- promo windows: the dish, in its window, vs usual ------------
@@ -111,7 +121,7 @@ export function measureProof(input: {
   const verdict: ProofReport["verdict"] =
     campaignDays.length < MIN_DAYS
       ? "too-early"
-      : lift - half > 0
+      : lift - (half / Z80) * Z_PROVEN > 0
         ? "proven"
         : lift > 0
           ? "promising"

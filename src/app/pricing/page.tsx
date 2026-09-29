@@ -95,7 +95,48 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <div className="mt-12 grid items-start gap-5 lg:grid-cols-3">
+          {/* Pay for proof — the plan only Swell can offer, because only Swell measures */}
+          <div
+            className="mt-12 grid gap-6 rounded-xl border-2 p-7 text-left lg:grid-cols-[1.2fr_1fr] lg:items-center"
+            style={{ borderColor: OS.mint, background: OS.panel }}
+          >
+            <div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: OS.mint }}>
+                New · Pay for proof
+              </div>
+              <div className="mt-2 flex items-baseline gap-3">
+                <span className="font-display text-5xl">$0</span>
+                <span className="text-[15px]" style={{ color: OS.muted }}>
+                  a month. We earn 15% of what your register proves.
+                </span>
+              </div>
+              <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-pretty" style={{ color: OS.muted }}>
+                After each campaign, you upload your POS export and Swell measures the lift against what sales
+                would have been without it. You pay only when the result is <strong>proven</strong> — and only
+                on the cautious end of the range. No lift, no bill. Capped at $1,500 a month.
+              </p>
+            </div>
+            <div>
+              <ul className="space-y-2 text-[13.5px]">
+                {PLANS.performance.features.map((f) => (
+                  <li key={f} className="flex gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0" style={{ color: OS.mint }} />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={() => subscribe("performance")}
+                disabled={busy === "performance"}
+                className="mt-5 flex h-11 w-full items-center justify-center rounded text-[14px] font-semibold transition hover:brightness-110 disabled:opacity-60"
+                style={{ background: OS.mint, color: "#FFFFFF" }}
+              >
+                {busy === "performance" ? "Starting…" : "Start pay-for-proof — save a card, pay nothing yet"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid items-start gap-5 lg:grid-cols-3">
             {PLAN_ORDER.map((id) => {
               const plan = PLANS[id];
               const price = monthlyEquivalent(plan, interval);

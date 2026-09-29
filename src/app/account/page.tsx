@@ -14,6 +14,7 @@ type Me = {
   subscription: Subscription | null;
   plan: { name: string; monthly: number; annual: number; limits: { campaignsPerMonth: number } } | null;
   usage: { campaigns: number; limit: number };
+  charges?: Array<{ slug: string; restaurant: string; amount: number; status: string; reason: string; date: string }>;
   stripeConfigured: boolean;
 };
 
@@ -135,6 +136,38 @@ export default function AccountPage() {
                 </div>
               </div>
             </Card>
+
+            {me.subscription.plan === "performance" && (
+              <Card className="p-5">
+                <div className="text-sm font-semibold">Pay-for-proof charges</div>
+                <p className="mt-1 text-xs text-fg-muted">
+                  15% of the cautious end of each proven lift, invoiced once a campaign has fully run. Nothing for
+                  unproven results.
+                </p>
+                {(me.charges ?? []).length === 0 ? (
+                  <p className="mt-3 text-sm text-fg-subtle">
+                    No charges yet. Upload results on a campaign&apos;s Proof tab once it has run.
+                  </p>
+                ) : (
+                  <div className="mt-3 divide-y divide-border">
+                    {me.charges!.map((c) => (
+                      <div key={c.slug} className="flex items-center gap-3 py-2.5 text-sm">
+                        <Link href={`/c/${c.slug}`} className="min-w-0 flex-1 truncate font-medium hover:underline">
+                          {c.restaurant}
+                        </Link>
+                        <span className="hidden max-w-[260px] truncate text-xs text-fg-subtle sm:block" title={c.reason}>
+                          {c.reason}
+                        </span>
+                        <span className="w-20 text-right font-mono tabular-nums">${c.amount.toLocaleString()}</span>
+                        <Badge tone={c.status === "invoiced" || c.status === "demo" ? "mint" : "muted"}>
+                          {c.status === "none" ? "not proven" : c.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={manage} loading={managing}>
