@@ -69,7 +69,7 @@ NYC trattoria export is parsed live and turned into a full campaign. No CSV or L
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 128 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
+| `npm test` | 137 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -92,7 +92,7 @@ Events ──────────────┘
 |---|---|
 | **Brand Agent** | Reads the website → logo, palette, typography, voice vector, imagery |
 | **Demand Agent** | Reads live marketplace demand (saves, redemptions, neighborhood mix) |
-| **Location Agent** | Geocodes the venue to coordinates (Open-Meteo geocoding) |
+| **Location Agent** | Geocodes the venue (Open-Meteo); the rest of the address disambiguates — "Hyde Park, Austin, TX" is Austin, not Hyde Park, Vermont |
 | **Weather Agent** | Pulls the **live 16-day forecast**, then **climate normals** for days 17–30 (Open-Meteo) — real-time, no key |
 | **Events Agent** | Finds holidays + nearby ticketed events that move demand (Nager.Date; optional Ticketmaster) |
 | **Analyst Agent** (with `model.ts`: three forecasters compete under 30-day walk-forward cross-validation against a “same as last week” benchmark; the winner ships with horizon-calibrated conformal 80/95% ranges) | Z-scores dayparts vs the venue's baseline, scores items by margin & mix |
@@ -196,7 +196,12 @@ Three inputs → one campaign:
 
 1. **Sales history** (`csv.ts`) — a flexible parser for Toast / Square transaction exports
    (CSV or XLSX). Derives net sales by daypart & day-of-week, top items, voids and payment
-   mix. Rejects anything under 14 days.
+   mix. Rejects anything under 14 days. Column detection sums **per-line** amounts and never
+   mistakes discount, comp, tax, tip or order-level totals for sales; Toast's flat export is
+   recognised by its own columns, and the venue in `location_name` ("Main Street Grill -
+   Austin, TX") pre-fills name + location. Large exports are gzipped in the browser
+   (`compress-upload.ts`) to fit Vercel's 4.5 MB request limit and inflated server-side with an
+   80 MB cap (`upload.ts`).
 2. **Brand kit** (`brand.ts`) — server-side fetch + Cheerio. Pulls logo, primary color
    (theme-color → CSS vars → dominant color from the logo via `sharp`), typography, tagline,
    and a free local **voice vector** (64-dim hashed TF) used to steer tone.
@@ -401,6 +406,6 @@ src/
     assistant-widget.tsx os-nav.tsx landing/ ui.tsx modal.tsx toaster.tsx …
 test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
-  quota.test.ts proof.test.ts value.test.ts
+  quota.test.ts proof.test.ts value.test.ts toast-export.test.ts geo.test.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

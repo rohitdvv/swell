@@ -90,9 +90,9 @@ flowchart TB
 
 | Agent | Module | Input → Output |
 |---|---|---|
-| Brand | `brand.ts` | URL → `BrandKit` (logo, colors, fonts, voice vector, image URLs) |
+| Brand | `brand.ts` | URL → `BrandKit` (logo, colors, fonts, voice vector, image URLs); name from SEO titles by matching the domain, white/black/grey never accepted as the brand colour |
 | Demand | `marketplace.ts` | slug → `MarketplaceSignals` (`simulated: true` until real app data) |
-| Location | `context/geo.ts` | free-text location → lat/lon/country (Open-Meteo geocoding) |
+| Location | `context/geo.ts` | free-text location → lat/lon/country (Open-Meteo geocoding); searches one address part at a time and lets the rest (city, state) choose among matches |
 | Weather | `context/weather.ts` | lat/lon → 30-day `DayWeather` map: live 16-day forecast, then climate normals (`source: "seasonal"`) for the tail |
 | Events | `context/events.ts` | country+coords+dates → holidays (Nager.Date) ∪ ticketed events (Ticketmaster, optional key) |
 | Analyst | `generator.ts:analyzeSales` + `model.ts:trainSalesModel` | daypart z-scores + item scores, **plus** model selection among 3 forecasters (seasonal mean, ridge weekday, ridge trend+weekday) by 30-day walk-forward CV with a seasonal-naive benchmark, horizon-banded split-conformal intervals and cross-conformal coverage; learns trend, strongest/weakest days, anomaly days |
@@ -306,7 +306,7 @@ or per IP, per window.
 | `/api/billing/me` | GET | user | — | user + subscription + tier + this account's usage |
 | `/api/billing/portal · bind` | POST | user | — | Stripe portal / post-checkout bind (refuses others' sessions) |
 | `/api/stripe/webhook` | POST | Stripe signature | — | subscription lifecycle sync |
-| `/api/parse-csv` | POST | user | 40/h | CSV/XLSX ≤ 15 MB → `ParsedSalesSummary` (rejects <14 days) |
+| `/api/parse-csv` | POST | user | 40/h | CSV/XLSX (gzipped by the browser; ≤ 15 MB on the wire, 80 MB inflated) → `ParsedSalesSummary` + detected venue (rejects <14 days) |
 | `/api/brand-kit` | POST | user | 30/h | URL → `BrandKit` via SSRF-safe fetch |
 | `/api/generate` | POST | user | 10/h + plan quota | zod-validated orchestration → campaign owned by caller; 402 over plan limits |
 | `/api/campaigns` | GET | user | — | **your** campaigns only |
