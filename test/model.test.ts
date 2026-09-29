@@ -119,6 +119,39 @@ describe("sales model — honest uncertainty (conformal intervals)", () => {
     expect(in95 / n).toBeGreaterThan(0.92);
   });
 
+  it("stays honest with only 3–6 weeks of history (no overconfident 95% range)", () => {
+    // Short exports are common. The old model's 95% range held only ~83% of
+    // the time here; ranges must widen, not pretend.
+    const r = rng(77);
+    let n = 0;
+    let in80 = 0;
+    let in95 = 0;
+    for (let k = 0; k < 60; k++) {
+      const hist = 21 + Math.floor(r() * 24);
+      const sd = 100 + r() * 400;
+      const trendPerDay = (r() - 0.5) * 12;
+      const m = trainSalesModel(summary(series(hist, { trendPerDay, sd, seed: 300 + k })))!;
+      for (const d of series(30, { trendPerDay, sd, seed: 700 + k, from: hist })) {
+        n++;
+        const a = m.predictInterval(d.date, 0.8);
+        const b = m.predictInterval(d.date, 0.95);
+        if (d.net_sales >= a.low && d.net_sales <= a.high) in80++;
+        if (d.net_sales >= b.low && d.net_sales <= b.high) in95++;
+      }
+      // Too little history for non-overlapping self-checks → it says so.
+      if (hist < 40) expect(m.interval.coverage80).toBeNull();
+    }
+    expect(in80 / n).toBeGreaterThan(0.78);
+    expect(in95 / n).toBeGreaterThan(0.92);
+  });
+
+  it("widens week-3/4 ranges when it has no long-horizon evidence", () => {
+    const m = trainSalesModel(summary(series(30, { sd: 200, seed: 12 })))!;
+    const [w1, w2, w3] = m.interval.bands;
+    expect(w2.q80).toBeGreaterThan(w1.q80);
+    expect(w3.q80).toBeGreaterThan(w2.q80);
+  });
+
   it("measures its own coverage in backtest, near nominal", () => {
     const m = trainSalesModel(summary(series(120, { sd: 200, seed: 3 })))!;
     expect(m.interval.coverage80).not.toBeNull();

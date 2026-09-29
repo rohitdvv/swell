@@ -306,7 +306,7 @@ function ModelCard({ model, brand }: { model: SalesModel; brand: string }) {
         <span className="text-fg-subtle">
           {cov !== null
             ? `Its 80% range held the real number ${(cov * 100).toFixed(0)}% of the time on unseen days.`
-            : "Model card — selection, benchmark and calibration."}
+            : `Only ${model.trainedDays} days of history — too short to test its own ranges yet, so they're deliberately wide. Export 45+ days to sharpen them.`}
         </span>
         <span className="ml-auto font-mono text-[10px] text-fg-subtle transition group-open:rotate-90">▸</span>
       </summary>

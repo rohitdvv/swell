@@ -268,8 +268,11 @@ type Residual = { r: number; y: number; h: number };
 export function walkForwardFolds(series: DailySales[], horizon = CALIBRATION_HORIZON): Fold[] {
   const n = series.length;
   const minTrain = Math.max(7, Math.min(Math.max(21, Math.ceil(n * 0.4)), n - ORIGIN_STEP));
+  // Short histories get an origin every day: a month of data yields ~45
+  // out-of-sample errors instead of ~11, which is what calibration needs.
+  const step = n < 60 ? 1 : n < 120 ? 3 : ORIGIN_STEP;
   const folds: Fold[] = [];
-  for (let s = minTrain; s < n; s += ORIGIN_STEP) {
+  for (let s = minTrain; s < n; s += step) {
     folds.push({ train: series.slice(0, s), test: series.slice(s, Math.min(s + horizon, n)) });
   }
   return folds;
@@ -284,16 +287,30 @@ function cvResiduals(folds: Fold[], fitter: Fitter, t0: number): Residual[][] {
 }
 
 /**
- * Conformal half-widths per horizon band. A band with too few errors inherits
- * from the band before it, and widths never shrink with horizon.
+ * Conformal half-widths per horizon band. Widths never shrink with horizon.
+ * A band without enough out-of-sample errors of its own has no evidence for
+ * its horizon, so it is WIDENED from the band before it by √(horizon ratio) —
+ * never simply copied, which would claim week-4 is as predictable as week-1.
  */
 function calibrateBands(residuals: Residual[]): HorizonBand[] {
   const out: HorizonBand[] = [];
+  const all = residuals.map((x) => Math.abs(x.r));
   for (const [from, to] of BANDS) {
     const abs = residuals.filter((x) => x.h >= from && x.h <= to).map((x) => Math.abs(x.r));
     const prev = out[out.length - 1];
-    let q80 = abs.length >= MIN_BAND_N ? conformalQuantile(abs, 0.2) : (prev?.q80 ?? conformalQuantile(residuals.map((x) => Math.abs(x.r)), 0.2));
-    let q95 = abs.length >= MIN_BAND_N ? conformalQuantile(abs, 0.05) : (prev?.q95 ?? conformalQuantile(residuals.map((x) => Math.abs(x.r)), 0.05));
+    let q80: number;
+    let q95: number;
+    if (abs.length >= MIN_BAND_N) {
+      q80 = conformalQuantile(abs, 0.2);
+      q95 = conformalQuantile(abs, 0.05);
+    } else if (prev) {
+      const grow = Math.sqrt((from + to) / (prev.from + prev.to));
+      q80 = prev.q80 * grow;
+      q95 = prev.q95 * grow;
+    } else {
+      q80 = conformalQuantile(all, 0.2);
+      q95 = conformalQuantile(all, 0.05);
+    }
     if (prev) {
       q80 = Math.max(q80, prev.q80);
       q95 = Math.max(q95, prev.q95);
@@ -360,12 +377,20 @@ export function trainSalesModel(sales: ParsedSalesSummary): SalesModel | null {
   // Cross-conformal coverage: calibrate on the other folds, test on this one.
   let coverage80: number | null = null;
   let coverage95: number | null = null;
+  // Folds whose test windows overlap share days, so calibrating on one and
+  // testing on the other would grade the model on answers it has seen. Only
+  // non-overlapping folds calibrate each other; if the history is too short
+  // for that, coverage stays null and the UI says so instead of guessing.
   if (best.perFold.length >= 2) {
     let hit80 = 0;
     let hit95 = 0;
     let total = 0;
+    const span = folds.map((f) => [f.test[0]?.date ?? "", f.test[f.test.length - 1]?.date ?? ""]);
     best.perFold.forEach((fold, i) => {
-      const calib = calibrateBands(best.perFold.filter((_, j) => j !== i).flat());
+      const others = best.perFold.filter((_, j) => j !== i && (span[j][1] < span[i][0] || span[j][0] > span[i][1]));
+      const residualsElsewhere = others.flat();
+      if (residualsElsewhere.length < MIN_BAND_N) return;
+      const calib = calibrateBands(residualsElsewhere);
       for (const x of fold) {
         const b = bandFor(calib, x.h);
         total++;
