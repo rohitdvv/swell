@@ -70,10 +70,10 @@ export const PLANS: Record<PlanId, Plan> = {
     features: [
       "Up to 10 restaurants",
       "Unlimited campaigns",
-      "Everything in Starter, plus:",
-      "Ad Kit — Meta & Google-ready assets",
-      "Connect & auto-publish to ad platforms",
-      "Priority poster rendering",
+      "Everything in Free, plus:",
+      "Flat fee — no share of proven lift",
+      "Ad Kit — every poster pre-sized for Meta, Google, IG & TikTok",
+      "Staffing plans and Proof reports for every campaign",
     ],
     priceIds: {
       monthly: process.env.STRIPE_PRICE_PRO_MONTHLY,
@@ -97,9 +97,8 @@ export const PLANS: Record<PlanId, Plan> = {
       "Unlimited restaurants",
       "Unlimited campaigns",
       "Everything in Pro, plus:",
-      "White-label campaign artifacts",
-      "Team seats & client workspaces",
-      "Dedicated onboarding",
+      "Proof reports you can share with each client",
+      "Priority onboarding with a founder",
     ],
     priceIds: {
       monthly: process.env.STRIPE_PRICE_AGENCY_MONTHLY,
@@ -121,7 +120,7 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     features: [
       "$0 a month — no subscription",
-      "15% of lift your register proves, billed on the cautious end of the range",
+      "15% of lift your register proves (10% for life for the first 100 restaurants), billed on the cautious end of the range",
       "Capped at $1,500 a month per account",
       "Nothing billed for 'promising', 'no lift' or 'too early'",
       "Up to 3 restaurants, unlimited campaigns, Ad Kit",
@@ -131,7 +130,9 @@ export const PLANS: Record<PlanId, Plan> = {
   },
 };
 
-export const PLAN_ORDER: PlanId[] = ["starter", "pro", "agency"];
+/** Shown on /pricing. Starter stays valid for existing accounts but is no longer sold:
+ * Free and pay-for-proof cover the single restaurant better. */
+export const PLAN_ORDER: PlanId[] = ["pro", "agency"];
 
 export function planPrice(plan: Plan, interval: Interval): number {
   return interval === "annual" ? plan.annual : plan.monthly;

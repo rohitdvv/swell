@@ -17,6 +17,13 @@ import {
 export default function PricingPage() {
   const [interval, setInterval] = React.useState<Interval>("monthly");
   const [busy, setBusy] = React.useState<PlanId | null>(null);
+  const [founding, setFounding] = React.useState<{ left: number; limit: number } | null>(null);
+  React.useEffect(() => {
+    fetch("/api/billing/founding")
+      .then((r) => r.json())
+      .then((d) => setFounding({ left: d.left, limit: d.limit }))
+      .catch(() => {});
+  }, []);
 
   async function subscribe(plan: PlanId) {
     setBusy(plan);
@@ -46,7 +53,7 @@ export default function PricingPage() {
 
   return (
     <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
-      <OsNav links={[{ href: "/demo", label: "Sample campaign" }, { href: "/#how", label: "How it works" }]} />
+      <OsNav links={[{ href: "/audit", label: "Free audit" }, { href: "/demo", label: "Sample campaign" }, { href: "/accuracy", label: "Accuracy" }]} />
 
       <section className="relative overflow-hidden">
         <div
@@ -101,19 +108,33 @@ export default function PricingPage() {
             style={{ borderColor: OS.mint, background: OS.panel }}
           >
             <div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: OS.mint }}>
-                New · Pay for proof
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: OS.mint }}>
+                  Pay for proof
+                </span>
+                {founding && founding.left > 0 && (
+                  <span
+                    className="rounded-full px-2.5 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.08em]"
+                    style={{ background: "rgba(22,120,77,0.12)", color: OS.mint }}
+                  >
+                    Founding {founding.limit}: 10% for life · {founding.left} spot{founding.left === 1 ? "" : "s"} left
+                  </span>
+                )}
               </div>
               <div className="mt-2 flex items-baseline gap-3">
                 <span className="font-display text-5xl">$0</span>
                 <span className="text-[15px]" style={{ color: OS.muted }}>
-                  a month. We earn 15% of what your register proves.
+                  a month. We earn {founding && founding.left > 0 ? "10%" : "15%"} of what your register proves.
                 </span>
               </div>
               <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-pretty" style={{ color: OS.muted }}>
                 After each campaign, you upload your POS export and Swell measures the lift against what sales
                 would have been without it. You pay only when the result is <strong>proven</strong> — and only
                 on the cautious end of the range. No lift, no bill. Capped at $1,500 a month.
+              </p>
+              <p className="mt-3 text-[13px]" style={{ color: OS.subtle }}>
+                For comparison: Toast&apos;s AI marketing add-on lists at $499 a month whether it works or not (Toast,
+                May 2026).
               </p>
             </div>
             <div>
@@ -136,7 +157,7 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid items-start gap-5 lg:grid-cols-3">
+          <div className="mx-auto mt-5 grid max-w-[880px] items-start gap-5 lg:grid-cols-2">
             {PLAN_ORDER.map((id) => {
               const plan = PLANS[id];
               const price = monthlyEquivalent(plan, interval);

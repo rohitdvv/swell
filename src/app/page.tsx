@@ -41,11 +41,11 @@ export default async function Landing() {
       >
         <Link href="/" className="flex items-baseline gap-2.5">
           <span className="font-display text-2xl font-medium tracking-[-0.02em]">Swell</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: OS.amber }}>
-            OS
-          </span>
         </Link>
         <nav className="ml-auto flex items-center gap-5 text-[13px] sm:gap-7">
+          <Link href="/audit" className="hidden font-semibold hover:text-fg sm:block" style={{ color: OS.amber }}>
+            Free audit
+          </Link>
           <Link href="#why" className="hidden hover:text-fg lg:block" style={{ color: OS.muted }}>
             Why Swell
           </Link>
@@ -81,24 +81,23 @@ export default async function Landing() {
               style={{ color: OS.amber }}
             >
               <span className="os-pulse size-1.5 rounded-full" style={{ background: OS.mint }} />
-              For independent restaurants
+              The independent referee for restaurant marketing
             </div>
             <h1 className="mt-6 font-display text-[clamp(44px,6vw,76px)] font-normal leading-[1.0] tracking-[-0.025em] text-balance">
-              Fill your slow hours. <em className="italic" style={{ color: OS.amber }}>Prove it</em> on your
-              register.
+              Is your marketing working? <em className="italic" style={{ color: OS.amber }}>Your register knows.</em>
             </h1>
             <p className="mt-7 max-w-[520px] text-[17px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
-              Swell reads your POS, finds the hours you&apos;re quietly empty, and plans a month of offers
-              for them — each with a poster and caption you can post in one tap. Then it reads your
-              register again and tells you, in dollars, what the campaign actually earned.
+              Swell reads your POS and finds the profit you&apos;re leaving in slow hours and over-staffed
+              shifts. It runs the month for you — offers, posters, a staffing plan — then proves on your
+              own register what it earned. You pay only when it&apos;s proven.
             </p>
             <div className="mt-9 flex flex-wrap gap-3.5">
               <Link
-                href="/sign-up"
+                href="/audit"
                 className="inline-flex h-[50px] items-center rounded px-6 text-[15px] font-bold transition hover:brightness-110"
                 style={{ background: OS.amber, color: "#FFFFFF" }}
               >
-                Start free — no card
+                Free 60-second audit
               </Link>
               <Link
                 href="/demo"
@@ -112,9 +111,9 @@ export default async function Landing() {
               className="mt-8 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[11px] tracking-[0.06em]"
               style={{ color: OS.subtle }}
             >
-              <span>READS YOUR POS</span>
-              <span>POSTS IN ONE TAP</span>
-              <span>PROVES WHAT IT EARNED</span>
+              <span>NO SIGN-UP</span>
+              <span>TOAST · SQUARE · CLOVER</span>
+              <span>$0 UNLESS PROVEN</span>
             </div>
           </div>
 
@@ -229,15 +228,16 @@ export default async function Landing() {
         <div className="mx-auto max-w-[1280px] px-5 py-20 sm:px-10 lg:py-[110px]">
           <div className="max-w-[680px]">
             <div className="font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.amber }}>
-              CHAPTER 04 — WHY NOT JUST ASK CHATGPT?
+              CHAPTER 04 — WHY AN INDEPENDENT REFEREE?
             </div>
             <h2 className="mt-4 font-display text-[clamp(32px,5vw,48px)] font-normal leading-[1.05] tracking-[-0.02em] text-balance">
-              A chatbot can write a promotion. It can&apos;t see your register.
+              Everyone sells you marketing. Nobody independent checks it.
             </h2>
             <p className="mt-5 text-[16px] leading-[1.6] text-pretty" style={{ color: OS.muted }}>
-              General assistants and Meta&apos;s ad tools are great at words and pictures. They don&apos;t
-              know which of your hours are empty, and they can&apos;t tell you whether last month&apos;s
-              offer made you a dollar. That&apos;s the whole job.
+              In 2026 every POS added an AI marketing agent — and each reports its own results. A
+              chatbot can write a promotion but can&apos;t see your register. Swell works with any POS,
+              checks any campaign — ours or anyone&apos;s — against what your sales would have been
+              without it, and charges only when the answer is yes.
             </p>
           </div>
           <div className="mt-12 overflow-x-auto rounded-lg border" style={{ borderColor: OS.line2, background: OS.panel }}>
@@ -246,7 +246,7 @@ export default async function Landing() {
                 <tr className="border-b" style={{ borderColor: OS.line2 }}>
                   <th className="px-5 py-4 font-normal" style={{ color: OS.subtle }} />
                   <th className="px-5 py-4 font-semibold" style={{ color: OS.muted }}>
-                    ChatGPT / Meta AI
+                    POS AI agents · chatbots
                   </th>
                   <th className="px-5 py-4 font-semibold" style={{ color: OS.amber }}>
                     Swell
@@ -278,6 +278,17 @@ export default async function Landing() {
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-[12px]" style={{ color: OS.subtle }}>
+            Pricing as announced by Toast,{" "}
+            <a className="underline" href="https://pos.toasttab.com/news/toast-debuts-toast-iq-grow-spring-release-2026" rel="noreferrer" target="_blank">
+              May 2026
+            </a>
+            . Vendor-reported results are the vendor&apos;s own; Swell&apos;s method and test results are{" "}
+            <a className="underline" href="/accuracy">
+              public
+            </a>
+            .
+          </p>
         </div>
       </section>
 
@@ -362,16 +373,16 @@ export default async function Landing() {
             Stop guessing what to run on <em className="italic" style={{ color: OS.amber }}>Tuesday.</em>
           </h2>
           <p className="mx-auto mt-6 max-w-[440px] text-[16px] leading-[1.6]" style={{ color: OS.muted }}>
-            Your first campaign is free and takes about a minute. Upload an export, get a month of offers
-            and posters, and find out what it earned.
+            Upload one export. In a minute you&apos;ll know what your slow hours and schedule are costing
+            you — and whether the marketing you pay for is working.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-3.5">
             <Link
-              href="/sign-up"
+              href="/audit"
               className="inline-flex h-[52px] items-center rounded px-7 text-[15px] font-bold transition hover:brightness-110"
               style={{ background: OS.amber, color: "#FFFFFF" }}
             >
-              Start free
+              Get your free audit
             </Link>
             <Link
               href="/demo"
@@ -391,9 +402,6 @@ export default async function Landing() {
       >
         <span className="font-display text-[18px]">
           Swell{" "}
-          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>
-            OS
-          </span>
         </span>
         <span className="font-mono text-[10px] tracking-[0.1em]" style={{ color: OS.subtle }}>
           MARKETING THAT PROVES IT PAID
@@ -456,12 +464,12 @@ const ASSUMPTIONS = [
 ];
 
 const COMPARE: Array<[string, string, string]> = [
-  ["Knows your slow hours", "✗ Only what you tell it", "Reads every order in your POS export"],
-  ["Knows tomorrow's weather and local events", "✗ Not unless you look it up", "Live forecast + holidays + games near you"],
-  ["A month of offers, posters and captions", "✓ If you prompt it 30 times", "One upload, about a minute"],
-  ["Posts to Instagram and Facebook", "✓ Via ad accounts and setup", "One tap from your phone, no linking"],
-  ["Tells you what it earned", "✗ Clicks and likes, not dollars", "Actual vs expected on your register"],
-  ["Honest about uncertainty", "✗ Confident either way", "Every number ships with a range"],
+  ["Who says whether it worked", "✗ The vendor selling it", "A model trained only on sales before the campaign"],
+  ["What you pay", "✗ A monthly fee either way — Toast IQ Grow lists $499/mo", "$0 unless your register proves it"],
+  ["Which POS", "✗ Built into one", "Toast, Square or Clover exports"],
+  ["Checks campaigns it didn't run", "✗ No", "Yes — agencies, flyers, other tools"],
+  ["Staffing plan from the forecast", "✓ Some suggest shifts", "Hours per daypart, all month, with the waste priced"],
+  ["Honest about uncertainty", "✗ Headline averages", "Every number has a range; public accuracy record"],
 ];
 
 const PROOF_POINTS = [

@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -203,6 +204,19 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (key, window_start)
     )`);
+  // Owners who asked to talk — founder-led sales starts here.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      name TEXT,
+      phone TEXT,
+      restaurant TEXT,
+      source TEXT NOT NULL,
+      note TEXT,
+      found_per_month INTEGER,
+      created_at TEXT NOT NULL
+    )`);
   // Pay-for-proof: one row per campaign, never two — the fee for a campaign
   // is updated while it's an estimate and frozen once invoiced.
   await exec(`
@@ -257,6 +271,7 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     ["campaign_days", "expected_covers REAL NOT NULL DEFAULT 0"],
     ["campaigns", "owner_email TEXT"],
     ["campaigns", "proof_json TEXT"],
+    ["subscriptions", "performance_rate REAL"],
   ];
   for (const [table, col] of cols) {
     try {
@@ -315,6 +330,18 @@ function rowToCampaign(r: Row): Campaign {
     proof: parse(r.proof_json, null as Campaign["proof"]),
   };
 }
+
+export type Lead = {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  restaurant: string | null;
+  source: string;
+  note: string | null;
+  found_per_month: number | null;
+  created_at: string;
+};
 
 export type PerformanceCharge = {
   campaign_id: string;
@@ -528,6 +555,67 @@ export const repo = {
   /** Save a Proof report (measured lift) on a campaign. */
   async setProof(campaignId: string, proof: unknown): Promise<void> {
     await q(`UPDATE campaigns SET proof_json=$2 WHERE id=$1`, [campaignId, JSON.stringify(proof)]);
+  },
+
+  // ---- founder dashboard ----
+  async adminStats() {
+    const n = async (sql: string, params: unknown[] = []) => num((await one(sql, params))?.c);
+    const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+    const [users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed] =
+      await Promise.all([
+        n(`SELECT COUNT(*) c FROM users`),
+        n(`SELECT COUNT(*) c FROM users WHERE created_at >= $1`, [weekAgo]),
+        n(`SELECT COUNT(*) c FROM campaigns WHERE slug <> 'demo'`),
+        n(`SELECT COUNT(*) c FROM campaigns WHERE slug <> 'demo' AND created_at >= $1`, [weekAgo]),
+        n(`SELECT COUNT(*) c FROM campaigns WHERE slug <> 'demo' AND status = 'published'`),
+        n(`SELECT COUNT(*) c FROM campaigns WHERE slug <> 'demo' AND proof_json IS NOT NULL`),
+        n(`SELECT COUNT(*) c FROM performance_charges WHERE status IN ('invoiced','demo','estimate')`),
+        n(`SELECT COUNT(*) c FROM subscriptions WHERE status IN ('active','trialing') AND plan <> 'performance'`),
+        n(`SELECT COUNT(*) c FROM subscriptions WHERE status IN ('active','trialing') AND plan = 'performance'`),
+        n(`SELECT COUNT(*) c FROM leads`),
+        n(`SELECT COALESCE(SUM(amount),0) c FROM performance_charges WHERE status = 'invoiced'`),
+      ]);
+    const recentUsers = await q(`SELECT email, name, created_at FROM users ORDER BY created_at DESC LIMIT 15`);
+    const recentCampaigns = await q(
+      `SELECT slug, restaurant_name, owner_email, status, created_at, proof_json IS NOT NULL AS has_proof
+         FROM campaigns WHERE slug <> 'demo' ORDER BY created_at DESC LIMIT 15`
+    );
+    return {
+      users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed,
+      recentUsers: recentUsers.map((r) => ({ email: r.email as string, name: r.name as string, created_at: r.created_at as string })),
+      recentCampaigns: recentCampaigns.map((r) => ({
+        slug: r.slug as string,
+        restaurant: r.restaurant_name as string,
+        owner: (r.owner_email as string) ?? null,
+        status: r.status as string,
+        created_at: r.created_at as string,
+        hasProof: !!r.has_proof,
+      })),
+    };
+  },
+
+  // ---- leads ----
+  async addLead(l: Omit<Lead, "id" | "created_at">): Promise<void> {
+    await q(
+      `INSERT INTO leads (id, email, name, phone, restaurant, source, note, found_per_month, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [randomUUID(), l.email.toLowerCase(), l.name, l.phone, l.restaurant, l.source, l.note, l.found_per_month, new Date().toISOString()]
+    );
+  },
+
+  async listLeads(limit = 200): Promise<Lead[]> {
+    const rows = await q(`SELECT * FROM leads ORDER BY created_at DESC LIMIT $1`, [limit]);
+    return rows.map((r) => ({
+      id: r.id as string,
+      email: r.email as string,
+      name: (r.name as string) ?? null,
+      phone: (r.phone as string) ?? null,
+      restaurant: (r.restaurant as string) ?? null,
+      source: r.source as string,
+      note: (r.note as string) ?? null,
+      found_per_month: r.found_per_month == null ? null : num(r.found_per_month),
+      created_at: r.created_at as string,
+    }));
   },
 
   // ---- pay-for-proof charges ----
@@ -781,19 +869,28 @@ export const repo = {
       current_period_end: (row.current_period_end as string) ?? null,
       stripe_customer_id: (row.stripe_customer_id as string) ?? null,
       stripe_subscription_id: (row.stripe_subscription_id as string) ?? null,
+      performance_rate: row.performance_rate == null ? null : num(row.performance_rate),
     };
+  },
+
+  /** Pay-for-proof accounts ever activated — the founding-100 counter. */
+  async countPerformanceAccounts(): Promise<number> {
+    const r = await one(`SELECT COUNT(*) c FROM subscriptions WHERE plan='performance' AND performance_rate IS NOT NULL`);
+    return num(r?.c);
   },
 
   async upsertSubscription(sub: Subscription): Promise<void> {
     const now = new Date().toISOString();
     await q(
       `INSERT INTO subscriptions
-        (email, plan, "interval", status, mode, current_period_end, stripe_customer_id, stripe_subscription_id, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+        (email, plan, "interval", status, mode, current_period_end, stripe_customer_id, stripe_subscription_id, created_at, updated_at, performance_rate)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)
        ON CONFLICT(email) DO UPDATE SET
          plan=EXCLUDED.plan, "interval"=EXCLUDED."interval", status=EXCLUDED.status, mode=EXCLUDED.mode,
          current_period_end=EXCLUDED.current_period_end, stripe_customer_id=EXCLUDED.stripe_customer_id,
-         stripe_subscription_id=EXCLUDED.stripe_subscription_id, updated_at=EXCLUDED.updated_at`,
+         stripe_subscription_id=EXCLUDED.stripe_subscription_id, updated_at=EXCLUDED.updated_at,
+         -- a rate, once granted, is locked for life
+         performance_rate=COALESCE(subscriptions.performance_rate, EXCLUDED.performance_rate)`,
       [
         sub.email.toLowerCase(),
         sub.plan,
@@ -804,6 +901,7 @@ export const repo = {
         sub.stripe_customer_id,
         sub.stripe_subscription_id,
         now,
+        sub.performance_rate ?? null,
       ]
     );
   },

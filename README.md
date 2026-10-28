@@ -1,16 +1,14 @@
-# Swell — Operator Side
+# Swell — the independent referee for restaurant marketing
 
-> Restaurants don't need more tools. They need a brain that's been in the kitchen.
+> Is your marketing working? Your register knows.
 
-Upload 30–90 days of sales, paste a website URL, and Swell generates a **30-day
-campaign** of recurring, on-brand discounts — with auto-branded marketing creative —
-persisted and published as a shareable public URL.
+Swell reads a restaurant's POS export and finds the profit it's leaving in slow hours and
+over-staffed shifts. It runs the month — offers, posters, a staffing plan — then **proves on the
+restaurant's own register what it earned**, and checks *any* campaign (a POS vendor's AI agent,
+an agency, a flyer) the same way. Owners pay only when the result is proven.
+See **[STRATEGY.md](STRATEGY.md)** for the market and the model.
 
-This is the **operator side**: the Generator, the public Campaign Artifact, and the
-internal Brain Console. Every AI feature is optional: with no LLM keys the whole pipeline
-runs on deterministic engines and free public APIs.
-
-### 🔗 Live: **[swell-ten-theta.vercel.app](https://swell-ten-theta.vercel.app)** · [Try the demo campaign](https://swell-ten-theta.vercel.app/demo) (free, no sign-up) · [Status](https://swell-ten-theta.vercel.app/api/health)
+### 🔗 Live: **[swell-ten-theta.vercel.app](https://swell-ten-theta.vercel.app)** · [Free audit](https://swell-ten-theta.vercel.app/audit) (no sign-up) · [Demo campaign](https://swell-ten-theta.vercel.app/demo) · [Accuracy record](https://swell-ten-theta.vercel.app/accuracy) · [Status](https://swell-ten-theta.vercel.app/api/health)
 
 [![CI](https://github.com/rohitdvv/swell/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/swell/actions/workflows/ci.yml)
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/rohitdvv/swell&env=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,CLERK_SECRET_KEY&envDescription=Clerk%20keys%20for%20Google%20%2B%20email%20sign-in)
@@ -69,7 +67,7 @@ NYC trattoria export is parsed live and turned into a full campaign. No CSV or L
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 157 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
+| `npm test` | 165 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -254,6 +252,17 @@ regenerates anything an LLM produces that fails.
 
 `GET /api/health` reports database and LLM status for uptime monitors (no secrets).
 
+## Free audit (`/audit`) — the front door
+
+No account, nothing stored: the export is analysed in memory (`src/lib/audit.ts`,
+`/api/audit`, rate-limited per IP).
+- **Find my money** — labor hours a flat schedule wastes + the slow-hour promotion opportunity,
+  both as profit per month/year, with the model's tested accuracy.
+- **Did my marketing work?** — any campaign, from its start date: lift vs a model trained only on
+  the days before, an 80% range, and — given what it cost — the cautious return.
+Results offer "start free", "pay for proof", or "book a walkthrough" (stored as a lead for the
+founder dashboard at `/admin`, restricted to `ADMIN_EMAILS`).
+
 ## Proof — the part a chatbot can't do
 
 After a campaign runs, the owner uploads the same POS export on the campaign's **Proof** tab.
@@ -282,7 +291,8 @@ optional "Boost" section.
 wastes on quiet days — owner-adjustable sales-per-labor-hour, wage and minimum crew.
 
 **Pay for proof.** A $0/month plan: 15% of the cautious end of each *proven* lift, capped at
-$1,500 a month, invoiced once a campaign has fully run. No lift, no bill. See ARCHITECTURE.md.
+$1,500 a month, invoiced once a campaign has fully run. No lift, no bill. **Founding 100**: the first
+hundred accounts keep 10% for life (real counter, rate locked in the DB). See ARCHITECTURE.md.
 
 ## How accurate is the forecast?
 
@@ -419,5 +429,6 @@ test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
   quota.test.ts proof.test.ts value.test.ts toast-export.test.ts geo.test.ts
   staffing.test.ts performance.test.ts settle.test.ts evidence.test.ts helpers/synthetic.ts
+  audit.test.ts growth.test.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

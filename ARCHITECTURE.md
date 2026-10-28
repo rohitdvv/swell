@@ -318,6 +318,10 @@ or per IP, per window.
 | `/api/campaigns/[slug]/proof` | POST | owner | 20/h | upload post-campaign export → measured lift (Proof) |
 | `/api/runs` | GET | user | — | this account's generation history |
 | `/accuracy` | page | public | — | live Proof aggregates + reproducible simulation evidence |
+| `/api/audit` | POST | public | 12/h/IP | free audit: find-money or check-a-campaign; export analysed in memory, never stored |
+| `/api/leads` | POST | public | 6/h/IP | "book a walkthrough" → `leads` (zod-validated) |
+| `/api/billing/founding` | GET | public | — | real founding-100 counter |
+| `/admin` | page | `ADMIN_EMAILS` | — | founder dashboard: funnel, leads, newest sign-ups and campaigns (404 for others) |
 | `/api/assistant` | POST | viewer | per user + IP | guarded, grounded Q&A over one campaign |
 | `/api/health` | GET | public | 60/min/IP | database + LLM status, commit SHA (no secrets) |
 
@@ -386,6 +390,17 @@ row, and Stripe idempotency keys make a racing double upload charge once. Checko
 plan is Stripe **setup** mode (save a card, charge nothing), and the saved card is made the
 customer's default for invoices on return / webhook. Tested against a real embedded Postgres
 in `test/settle.test.ts`.
+
+## Free audit (`src/lib/audit.ts`)
+
+`findMoney()` runs the Analyst + Strategy phases with neutral brand/marketplace and no live
+context (fast, no LLM, no network), `validateProjection()` for the promo range, and
+`planStaffing()` for labor; both converted to profit. `checkCampaign()` trains on days strictly
+before the stated start and calls `measureProof()` on the days after — the same engine that bills.
+
+**Founding 100** (`src/lib/billing/founding.ts`): `withPerformanceRate()` stamps 10% on the first
+100 pay-for-proof subscriptions (15% after); `subscriptions.performance_rate` is locked by
+`COALESCE` on upsert, and `settleProof()` bills at the locked rate.
 
 ## Accuracy record (`/accuracy`, `src/lib/evidence.ts`)
 

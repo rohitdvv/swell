@@ -11,7 +11,7 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
       style={{ background: OS.bg }}
     >
       <div className="font-display text-xl">
-        Swell <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
+        Swell
       </div>
       <div className="mt-8 font-mono text-[11px] tracking-[0.22em]" style={{ color: OS.rust }}>
         SOMETHING BROKE

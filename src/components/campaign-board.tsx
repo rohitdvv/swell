@@ -153,9 +153,6 @@ export function CampaignBoard({
       >
         <Link href="/" className="flex items-baseline gap-2">
           <span className="font-display text-xl">Swell</span>
-          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: "var(--os-amber)" }}>
-            OS
-          </span>
         </Link>
         <span className="os-label hidden md:block">
           /C/{campaign.restaurant_slug.toUpperCase()} · PUBLIC ARTIFACT

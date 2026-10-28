@@ -16,9 +16,6 @@ export function OsNav({ links = DEFAULT_LINKS }: { links?: NavLink[] }) {
     >
       <Link href="/" className="flex items-baseline gap-2.5">
         <span className="font-display text-2xl font-medium tracking-[-0.02em]">Swell</span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: OS.amber }}>
-          OS
-        </span>
       </Link>
       <nav className="ml-auto flex items-center gap-5 text-[13px] sm:gap-7">
         {links.map((l) => (
@@ -33,6 +30,7 @@ export function OsNav({ links = DEFAULT_LINKS }: { links?: NavLink[] }) {
 }
 
 const DEFAULT_LINKS: NavLink[] = [
+  { href: "/audit", label: "Free audit" },
   { href: "/demo", label: "Sample campaign" },
   { href: "/pricing", label: "Pricing" },
 ];

@@ -27,14 +27,15 @@ export async function settleProof(
   if (existing && (existing.status === "invoiced" || existing.status === "demo")) return existing;
 
   const billed = await repo.billedThisMonth(email, campaign.id);
-  const fee = performanceFee(proof, terms.rate, terms.monthlyCap, billed);
+  const rate = sub.performance_rate ?? terms.rate;
+  const fee = performanceFee(proof, rate, terms.monthlyCap, billed);
   const base = {
     campaign_id: campaign.id,
     email,
     slug: campaign.slug,
     restaurant_name: campaign.restaurant_name,
     basis: fee.basis,
-    rate: terms.rate,
+    rate,
     amount: fee.amount,
     stripe_invoice_id: null as string | null,
     reason: fee.reason,

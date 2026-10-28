@@ -251,7 +251,6 @@ function Console({ plan }: { plan: PlanInfo | null }) {
       >
         <Link href="/" className="flex items-baseline gap-2" title="Home">
           <span className="font-display text-xl">Swell</span>
-          <span className="font-mono text-[9px] tracking-[0.18em]" style={{ color: OS.amber }}>OS</span>
         </Link>
         <span className="os-label hidden md:block">CONSOLE</span>
         <div className="ml-auto flex items-center gap-2">

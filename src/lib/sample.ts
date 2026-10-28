@@ -80,7 +80,11 @@ export type SampleMeta = {
 };
 
 /** Build a deterministic transaction-level CSV (Square/Toast-style). */
-export function buildSampleCsv(days = 45): { csv: string; meta: SampleMeta } {
+export function buildSampleCsv(
+  days = 45,
+  /** Sample-only: simulate a campaign that lifts order volume from a given day. */
+  scenario?: { liftFromDay: number; liftPct: number }
+): { csv: string; meta: SampleMeta & { campaignStart?: string } } {
   const rand = mulberry32(60_2026);
   const rows: string[] = [
     "Date,Time,Order Id,Item,Qty,Net Sales,Payment Type,Voided",
@@ -97,7 +101,8 @@ export function buildSampleCsv(days = 45): { csv: string; meta: SampleMeta } {
     const iso = toISODate(date);
     const dow = date.getDay();
     const baseOrders = DOW_ORDERS[dow];
-    const nOrders = Math.round(baseOrders * (0.85 + rand() * 0.3));
+    const boost = scenario && d >= scenario.liftFromDay ? 1 + scenario.liftPct : 1;
+    const nOrders = Math.round(baseOrders * (0.85 + rand() * 0.3) * boost);
 
     for (let o = 0; o < nOrders; o++) {
       orderId++;
@@ -135,6 +140,9 @@ export function buildSampleCsv(days = 45): { csv: string; meta: SampleMeta } {
       days,
       start: toISODate(start),
       end: toISODate(end),
+      ...(scenario
+        ? { campaignStart: toISODate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + scenario.liftFromDay)) }
+        : {}),
     },
   };
 }

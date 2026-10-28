@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStripe, adoptSetupPaymentMethod } from "@/lib/billing/stripe";
 import { repo } from "@/lib/db";
+import { withPerformanceRate } from "@/lib/billing/founding";
 import { getAccountEmail } from "@/lib/billing/account";
 import type { PlanId, Interval } from "@/lib/billing/plans";
 
@@ -46,17 +47,19 @@ export async function POST(request: Request) {
     }
 
     await adoptSetupPaymentMethod(stripe, session);
-    await repo.upsertSubscription({
-      email: signedInEmail,
-      plan: (session.metadata?.plan as PlanId) || "pro",
-      interval: (session.metadata?.interval as Interval) || "monthly",
-      status: "active",
-      mode: "live",
-      current_period_end: null,
-      stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
-      stripe_subscription_id:
-        typeof session.subscription === "string" ? session.subscription : null,
-    });
+    await repo.upsertSubscription(
+      await withPerformanceRate({
+        email: signedInEmail,
+        plan: (session.metadata?.plan as PlanId) || "pro",
+        interval: (session.metadata?.interval as Interval) || "monthly",
+        status: "active",
+        mode: "live",
+        current_period_end: null,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
+        stripe_subscription_id:
+          typeof session.subscription === "string" ? session.subscription : null,
+      })
+    );
     return NextResponse.json({ ok: true, email: signedInEmail });
   } catch (err) {
     console.error("bind error", err);

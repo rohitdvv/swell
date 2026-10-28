@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/billing/stripe";
 import { PLANS, type PlanId, type Interval } from "@/lib/billing/plans";
 import { repo } from "@/lib/db";
+import { withPerformanceRate } from "@/lib/billing/founding";
 import { getAccountEmail } from "@/lib/billing/account";
 
 export const runtime = "nodejs";
@@ -87,15 +88,17 @@ export async function POST(request: Request) {
   // ---- Keyless demo mode: activate immediately so the flow is visible ----
   const periodEnd = new Date();
   periodEnd.setDate(periodEnd.getDate() + (interval === "annual" ? 365 : 30));
-  await repo.upsertSubscription({
-    email,
-    plan,
-    interval,
-    status: "active",
-    mode: "demo",
-    current_period_end: periodEnd.toISOString(),
-    stripe_customer_id: null,
-    stripe_subscription_id: null,
-  });
+  await repo.upsertSubscription(
+    await withPerformanceRate({
+      email,
+      plan,
+      interval,
+      status: "active",
+      mode: "demo",
+      current_period_end: periodEnd.toISOString(),
+      stripe_customer_id: null,
+      stripe_subscription_id: null,
+    })
+  );
   return NextResponse.json({ url: "/console", mode: "demo" });
 }

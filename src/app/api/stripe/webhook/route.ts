@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe, adoptSetupPaymentMethod } from "@/lib/billing/stripe";
 import { repo } from "@/lib/db";
+import { withPerformanceRate } from "@/lib/billing/founding";
 import type { PlanId, Interval } from "@/lib/billing/plans";
 
 export const runtime = "nodejs";
@@ -33,16 +34,18 @@ export async function POST(request: Request) {
         const interval = (s.metadata?.interval as Interval) || "monthly";
         if (email) {
           await adoptSetupPaymentMethod(stripe, s);
-          await repo.upsertSubscription({
-            email,
-            plan,
-            interval,
-            status: "active",
-            mode: "live",
-            current_period_end: null,
-            stripe_customer_id: typeof s.customer === "string" ? s.customer : null,
-            stripe_subscription_id: typeof s.subscription === "string" ? s.subscription : null,
-          });
+          await repo.upsertSubscription(
+            await withPerformanceRate({
+              email,
+              plan,
+              interval,
+              status: "active",
+              mode: "live",
+              current_period_end: null,
+              stripe_customer_id: typeof s.customer === "string" ? s.customer : null,
+              stripe_subscription_id: typeof s.subscription === "string" ? s.subscription : null,
+            })
+          );
         }
         break;
       }
@@ -51,13 +54,15 @@ export async function POST(request: Request) {
         const sub = event.data.object as Stripe.Subscription;
         const existing = await repo.getSubscriptionByStripeId(sub.id);
         if (existing) {
-          await repo.upsertSubscription({
-            ...existing,
-            status: sub.status === "active" || sub.status === "trialing" ? "active" : "canceled",
-            current_period_end: sub.items?.data?.[0]?.current_period_end
-              ? new Date(sub.items.data[0].current_period_end * 1000).toISOString()
-              : existing.current_period_end,
-          });
+          await repo.upsertSubscription(
+            await withPerformanceRate({
+              ...existing,
+              status: sub.status === "active" || sub.status === "trialing" ? "active" : "canceled",
+              current_period_end: sub.items?.data?.[0]?.current_period_end
+                ? new Date(sub.items.data[0].current_period_end * 1000).toISOString()
+                : existing.current_period_end,
+            })
+          );
         }
         break;
       }

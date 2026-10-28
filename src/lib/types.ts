@@ -115,6 +115,8 @@ export type Subscription = {
   current_period_end: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** Pay-for-proof share locked in at sign-up (founding accounts get 10%). null → plan default. */
+  performance_rate?: number | null;
 };
 
 // ---- Real-time context (weather / events / location) --------

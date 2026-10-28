@@ -24,15 +24,15 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"),
   title: {
-    default: "Swell — A brain that's been in the kitchen",
+    default: "Swell — Restaurant marketing that proves it paid",
     template: "%s · Swell",
   },
   description:
-    "Restaurants don't need more tools. They need a brain. Upload your sales, paste your website, get a 30-day branded discount campaign — generated, not requested.",
+    "Swell reads your POS, fills your slow hours, plans your staffing — and proves on your own register what it earned. Free audit in a minute; pay only for proven results.",
   openGraph: {
-    title: "Swell — A brain that's been in the kitchen",
+    title: "Swell — Restaurant marketing that proves it paid",
     description:
-      "Upload sales history, paste your website, get a 30-day branded campaign as a shareable URL.",
+      "Is your marketing working? Your register knows. Free 60-second audit — no sign-up.",
     type: "website",
   },
   twitter: { card: "summary_large_image" },
