@@ -8,6 +8,8 @@ import { Button, Card, Badge, Spinner } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import { osClass, OS } from "@/components/os-theme";
 import { ReferralCard } from "@/components/referral-card";
+import { DeleteAccount } from "@/components/delete-account";
+import { useClerk } from "@clerk/nextjs";
 import type { Subscription } from "@/lib/types";
 
 type Me = {
@@ -62,9 +64,9 @@ export default function AccountPage() {
     }
   }
 
+  const { signOut } = useClerk();
   async function logout() {
-    await fetch("/api/billing/logout", { method: "POST" });
-    load();
+    await signOut({ redirectUrl: "/" });
   }
 
   return (
@@ -216,6 +218,11 @@ export default function AccountPage() {
             </div>
           </Card>
             <ReferralCard />
+          </div>
+        )}
+        {me?.email && (
+          <div className="mt-8">
+            <DeleteAccount />
           </div>
         )}
       </main>

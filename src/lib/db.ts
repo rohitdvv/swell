@@ -24,7 +24,17 @@ import type {
 // ============================================================
 
 type Row = Record<string, unknown>;
-type Client = { query: (text: string, params?: unknown[]) => Promise<{ rows: Row[] }> };
+type Query = (text: string, params?: unknown[]) => Promise<{ rows: Row[] }>;
+type Client = {
+  query: Query;
+  /**
+   * Run `fn` inside ONE transaction on ONE connection. With a pool, sending
+   * BEGIN / statements / COMMIT as separate pool.query calls can land each on
+   * a different connection — no atomicity, and a connection returned to the
+   * pool mid-transaction. Each backend implements this correctly.
+   */
+  transaction: <T>(fn: (query: Query) => Promise<T>) => Promise<T>;
+};
 
 type Backend = {
   client: Client;
@@ -43,7 +53,23 @@ async function makeBackend(): Promise<Backend> {
   if (url) {
     const { Pool } = await import("@neondatabase/serverless");
     const pool = new Pool({ connectionString: url });
-    const client: Client = { query: (text, params) => pool.query(text, params) };
+    const client: Client = {
+      query: (text, params) => pool.query(text, params),
+      transaction: async (fn) => {
+        const conn = await pool.connect();
+        try {
+          await conn.query("BEGIN");
+          const result = await fn((text, params) => conn.query(text, params));
+          await conn.query("COMMIT");
+          return result;
+        } catch (e) {
+          await conn.query("ROLLBACK").catch(() => {});
+          throw e;
+        } finally {
+          conn.release();
+        }
+      },
+    };
     const backend: Backend = { client, kind: "neon", ready: Promise.resolve() };
     backend.ready = init(client, "neon");
     return backend;
@@ -61,7 +87,11 @@ async function makeBackend(): Promise<Backend> {
     fs.mkdirSync(dir, { recursive: true });
   }
   const pg = new PGlite(dir);
-  const client: Client = { query: (text, params) => pg.query(text, params as unknown[]) };
+  const client: Client = {
+    query: (text, params) => pg.query(text, params as unknown[]),
+    // PGlite's own transaction API serialises it against other queries.
+    transaction: (fn) => pg.transaction((tx) => fn((text, params) => tx.query(text, params as unknown[]))),
+  };
   const backend: Backend = { client, kind: "pglite", ready: Promise.resolve() };
   backend.ready = init(client, "pglite");
   return backend;
@@ -92,21 +122,15 @@ async function one(text: string, params: unknown[] = []): Promise<Row | null> {
   return rows[0] ?? null;
 }
 
-/** Run a set of statements in a transaction (used for regenerate-replaces). */
+/** Run a set of statements atomically, on a single connection. */
 async function withTx(fn: (run: (t: string, p?: unknown[]) => Promise<void>) => Promise<void>) {
   const b = getBackend();
   await b.ready;
-  const run = async (t: string, p: unknown[] = []) => {
-    await b.client.query(t, p);
-  };
-  await b.client.query("BEGIN");
-  try {
-    await fn(run);
-    await b.client.query("COMMIT");
-  } catch (e) {
-    await b.client.query("ROLLBACK");
-    throw e;
-  }
+  await b.client.transaction(async (query) => {
+    await fn(async (t, p = []) => {
+      await query(t, p);
+    });
+  });
 }
 
 async function init(client: Client, kind: Backend["kind"]): Promise<void> {
@@ -618,6 +642,57 @@ export const repo = {
         hasProof: !!r.has_proof,
       })),
     };
+  },
+
+  // ---- account deletion ----
+  /**
+   * Erase an account's data in one transaction. Kept, anonymised: invoiced
+   * pay-for-proof charges (financial records). Everything else goes —
+   * campaigns, their days and stored sales summaries, run history, credits,
+   * leads, the subscription row and the user row. Referral history of OTHER
+   * accounts survives with this account anonymised.
+   */
+  async deleteAccountData(email: string): Promise<{ campaigns: number }> {
+    const e = email.toLowerCase();
+    const tag = `deleted:${randomUUID().slice(0, 8)}`;
+    const owned = await q(`SELECT id, restaurant_id, restaurant_slug FROM campaigns WHERE owner_email=$1`, [e]);
+    const ids = owned.map((r) => r.id as string);
+    const restaurants = [...new Set(owned.map((r) => r.restaurant_id as string))];
+    const slugs = [...new Set(owned.map((r) => r.restaurant_slug as string))];
+    await withTx(async (run) => {
+      if (ids.length) {
+        await run(`DELETE FROM campaign_days WHERE campaign_id = ANY($1)`, [ids]);
+        await run(`DELETE FROM campaigns WHERE id = ANY($1)`, [ids]);
+      }
+      if (restaurants.length) {
+        await run(
+          `DELETE FROM restaurants WHERE id = ANY($1) AND id NOT IN (SELECT restaurant_id FROM campaigns)`,
+          [restaurants]
+        );
+      }
+      if (slugs.length) {
+        await run(
+          `DELETE FROM marketplace_signals WHERE restaurant_key = ANY($1)
+             AND restaurant_key NOT IN (SELECT restaurant_slug FROM campaigns)`,
+          [slugs]
+        );
+      }
+      await run(`DELETE FROM campaign_runs WHERE email=$1`, [e]);
+      await run(`DELETE FROM credits WHERE email=$1`, [e]);
+      await run(`DELETE FROM referral_rewards WHERE referred_email=$1`, [e]);
+      await run(`UPDATE referral_rewards SET referrer_email=$2 WHERE referrer_email=$1`, [e, tag]);
+      await run(`UPDATE users SET referred_by=NULL WHERE referred_by=$1`, [e]);
+      await run(`DELETE FROM leads WHERE email=$1`, [e]);
+      await run(
+        `UPDATE performance_charges SET email=$2, restaurant_name='(deleted account)'
+          WHERE email=$1 AND status='invoiced'`,
+        [e, tag]
+      );
+      await run(`DELETE FROM performance_charges WHERE email=$1`, [e]);
+      await run(`DELETE FROM subscriptions WHERE email=$1`, [e]);
+      await run(`DELETE FROM users WHERE email=$1`, [e]);
+    });
+    return { campaigns: ids.length };
   },
 
   // ---- referrals + credits ----

@@ -11,7 +11,7 @@ const LeadSchema = z.object({
   name: z.string().trim().max(120).optional(),
   phone: z.string().trim().max(40).regex(/^[0-9+().\-\s]*$/, "digits only").optional(),
   restaurant: z.string().trim().max(160).optional(),
-  source: z.enum(["audit", "landing", "pricing", "check"]),
+  source: z.enum(["audit", "landing", "pricing", "check", "support"]),
   note: z.string().trim().max(1000).optional(),
   foundPerMonth: z.number().int().min(0).max(10_000_000).optional(),
 });

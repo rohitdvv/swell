@@ -416,6 +416,15 @@ export default async function Landing() {
           <Link href="/accuracy" style={{ color: OS.muted }}>
             Accuracy
           </Link>
+          <Link href="/privacy" style={{ color: OS.muted }}>
+            Privacy
+          </Link>
+          <Link href="/terms" style={{ color: OS.muted }}>
+            Terms
+          </Link>
+          <Link href="/support" style={{ color: OS.muted }}>
+            Support
+          </Link>
           <Link href="/pitch" style={{ color: OS.muted }}>
             Pitch
           </Link>

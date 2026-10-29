@@ -62,9 +62,9 @@ export default async function AdminPage() {
         </section>
 
         <section className="mt-8">
-          <h2 className="text-sm font-semibold">Leads — call these first</h2>
+          <h2 className="text-sm font-semibold">Leads &amp; support requests — reply to these first</h2>
           <Table
-            head={["When", "Email", "Phone", "Restaurant", "Found / mo", "From"]}
+            head={["When", "Email", "Phone", "Restaurant", "Found / mo", "From", "Message"]}
             rows={leads.map((l) => [
               l.created_at.slice(0, 16).replace("T", " "),
               <a key="e" className="underline" href={`mailto:${l.email}`}>{l.email}</a>,
@@ -72,6 +72,7 @@ export default async function AdminPage() {
               l.restaurant ?? "—",
               l.found_per_month ? `$${l.found_per_month.toLocaleString()}` : "—",
               l.source,
+              l.note ? <span key="n" className="block max-w-[320px] whitespace-pre-wrap">{l.note}</span> : "—",
             ])}
             empty="No leads yet. Share /audit with ten restaurant owners."
           />
