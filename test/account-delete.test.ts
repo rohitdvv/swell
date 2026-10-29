@@ -1,10 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { useTempDb } from "./helpers/temp-db";
 
-vi.hoisted(() => {
-  process.env.SWELL_DATA_DIR = `${process.env.TMPDIR ?? "/tmp"}/swell-del-${process.pid}-${Date.now()}`;
-  delete process.env.DATABASE_URL;
-  delete process.env.POSTGRES_URL;
-});
+useTempDb("delete");
 
 const { repo } = await import("@/lib/db");
 const { analyzeSales, buildDayPlan, assembleCampaign } = await import("@/lib/generator");

@@ -1,11 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { useTempDb } from "./helpers/temp-db";
 
-vi.hoisted(() => {
-  process.env.SWELL_DATA_DIR = `${process.env.TMPDIR ?? "/tmp"}/swell-growth-${process.pid}-${Date.now()}`;
-  delete process.env.DATABASE_URL;
-  delete process.env.POSTGRES_URL;
-  delete process.env.STRIPE_SECRET_KEY;
-});
+useTempDb("growth");
 
 const { repo } = await import("@/lib/db");
 const { withPerformanceRate, foundingStatus, FOUNDING_LIMIT } = await import("@/lib/billing/founding");

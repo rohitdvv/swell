@@ -1,13 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { useTempDb } from "./helpers/temp-db";
 
-// A throwaway embedded Postgres (PGlite) — never the developer's data.
-// (vi.hoisted runs before imports, so no fs here; db.ts creates the dir.)
-vi.hoisted(() => {
-  process.env.SWELL_DATA_DIR = `${process.env.TMPDIR ?? "/tmp"}/swell-settle-${process.pid}-${Date.now()}`;
-  delete process.env.DATABASE_URL;
-  delete process.env.POSTGRES_URL;
-  delete process.env.STRIPE_SECRET_KEY;
-});
+useTempDb("settle");
 
 const { repo } = await import("@/lib/db");
 const { settleProof } = await import("@/lib/billing/settle");
