@@ -3,13 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { CreditCard, LogOut, Zap, CheckCircle2, ArrowRight } from "lucide-react";
+import { CreditCard, Zap, CheckCircle2, ArrowRight } from "lucide-react";
 import { Button, Card, Badge, Spinner } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import { osClass, OS } from "@/components/os-theme";
 import { ReferralCard } from "@/components/referral-card";
 import { DeleteAccount } from "@/components/delete-account";
-import { useClerk } from "@clerk/nextjs";
+import { SignOutButton } from "@/components/sign-out-button";
 import type { Subscription } from "@/lib/types";
 
 type Me = {
@@ -64,10 +64,6 @@ export default function AccountPage() {
     }
   }
 
-  const { signOut } = useClerk();
-  async function logout() {
-    await signOut({ redirectUrl: "/" });
-  }
 
   return (
     <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
@@ -180,9 +176,7 @@ export default function AccountPage() {
               <Link href="/pricing">
                 <Button variant="outline">Change plan</Button>
               </Link>
-              <Button variant="ghost" onClick={logout} className="ml-auto">
-                <LogOut className="size-4" /> Sign out
-              </Button>
+              <SignOutButton />
             </div>
 
             {!me.stripeConfigured && (
