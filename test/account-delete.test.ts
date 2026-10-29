@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { useTempDb } from "./helpers/temp-db";
+import { setupTempDb } from "./helpers/temp-db";
 
-useTempDb("delete");
+setupTempDb("delete");
 
 const { repo } = await import("@/lib/db");
 const { analyzeSales, buildDayPlan, assembleCampaign } = await import("@/lib/generator");

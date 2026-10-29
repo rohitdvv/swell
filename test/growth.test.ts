@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { useTempDb } from "./helpers/temp-db";
+import { setupTempDb } from "./helpers/temp-db";
 
-useTempDb("growth");
+setupTempDb("growth");
 
 const { repo } = await import("@/lib/db");
 const { withPerformanceRate, foundingStatus, FOUNDING_LIMIT } = await import("@/lib/billing/founding");

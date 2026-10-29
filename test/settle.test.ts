@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { useTempDb } from "./helpers/temp-db";
+import { setupTempDb } from "./helpers/temp-db";
 
-useTempDb("settle");
+setupTempDb("settle");
 
 const { repo } = await import("@/lib/db");
 const { settleProof } = await import("@/lib/billing/settle");

@@ -10,7 +10,7 @@ import path from "node:path";
  * several files start at once) happens in beforeAll with a generous timeout,
  * so individual tests stay fast; the directory is removed afterwards.
  */
-export function useTempDb(name: string): void {
+export function setupTempDb(name: string): void {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `swell-test-${name}-`));
   process.env.SWELL_DATA_DIR = dir;
   delete process.env.DATABASE_URL;

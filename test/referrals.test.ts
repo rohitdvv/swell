@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { useTempDb } from "./helpers/temp-db";
+import { setupTempDb } from "./helpers/temp-db";
 
-useTempDb("referrals");
+setupTempDb("referrals");
 
 const { repo } = await import("@/lib/db");
 const { rewardReferralIfEarned, applyCredit, REFERRAL_CREDIT, REFERRAL_CODE } = await import("@/lib/billing/referrals");
