@@ -7,6 +7,7 @@ import { CreditCard, LogOut, Zap, CheckCircle2, ArrowRight } from "lucide-react"
 import { Button, Card, Badge, Spinner } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import { osClass, OS } from "@/components/os-theme";
+import { ReferralCard } from "@/components/referral-card";
 import type { Subscription } from "@/lib/types";
 
 type Me = {
@@ -158,7 +159,7 @@ export default function AccountPage() {
                           {c.reason}
                         </span>
                         <span className="w-20 text-right font-mono tabular-nums">${c.amount.toLocaleString()}</span>
-                        <Badge tone={c.status === "invoiced" || c.status === "demo" ? "mint" : "muted"}>
+                        <Badge tone={c.status === "invoiced" || c.status === "demo" || c.status === "credited" ? "mint" : "muted"}>
                           {c.status === "none" ? "not proven" : c.status}
                         </Badge>
                       </div>
@@ -167,6 +168,8 @@ export default function AccountPage() {
                 )}
               </Card>
             )}
+
+            <ReferralCard />
 
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={manage} loading={managing}>
@@ -188,6 +191,7 @@ export default function AccountPage() {
             )}
           </motion.div>
         ) : (
+          <div className="space-y-4">
           <Card className="p-8 text-center">
             <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-surface-2">
               <CreditCard className="size-5 text-fg-subtle" />
@@ -211,6 +215,8 @@ export default function AccountPage() {
               </Link>
             </div>
           </Card>
+            <ReferralCard />
+          </div>
         )}
       </main>
     </div>

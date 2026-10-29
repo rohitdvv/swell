@@ -4,6 +4,7 @@ import { getStripe } from "./stripe";
 import { PLANS } from "./plans";
 import { isPaying } from "./quota";
 import { performanceFee } from "./performance";
+import { applyCredit } from "./referrals";
 import type { Campaign } from "../types";
 import type { ProofReport } from "../proof";
 
@@ -24,7 +25,7 @@ export async function settleProof(
   if (!sub || !isPaying(sub) || sub.plan !== "performance") return null;
 
   const existing = await repo.getCharge(campaign.id);
-  if (existing && (existing.status === "invoiced" || existing.status === "demo")) return existing;
+  if (existing && (existing.status === "invoiced" || existing.status === "demo" || existing.status === "credited")) return existing;
 
   const billed = await repo.billedThisMonth(email, campaign.id);
   const rate = sub.performance_rate ?? terms.rate;
@@ -44,15 +45,23 @@ export async function settleProof(
   if (!fee.billable) return repo.upsertCharge({ ...base, amount: 0, status: "none" });
   if (!fee.final) return repo.upsertCharge({ ...base, status: "estimate" });
 
+  // Referral credit comes off the final fee (idempotent across retries).
+  const credit = await applyCredit(email, campaign.id, fee.amount);
+  if (credit > 0) {
+    base.amount = fee.amount - credit;
+    base.reason = `${fee.reason} −$${credit} referral credit.`;
+  }
+  if (base.amount <= 0) return repo.upsertCharge({ ...base, amount: 0, status: "credited" });
+
   const stripe = getStripe();
   if (sub.mode === "demo" || !stripe || !sub.stripe_customer_id) {
     return repo.upsertCharge({ ...base, status: "demo" });
   }
 
   try {
-    const description = `Swell pay-for-proof · ${campaign.restaurant_name} · ${fee.reason}`;
+    const description = `Swell pay-for-proof · ${campaign.restaurant_name} · ${base.reason}`;
     await stripe.invoiceItems.create(
-      { customer: sub.stripe_customer_id, amount: fee.amount * 100, currency: "usd", description },
+      { customer: sub.stripe_customer_id, amount: base.amount * 100, currency: "usd", description },
       { idempotencyKey: `swell-proof-item-${campaign.id}` }
     );
     const invoice = await stripe.invoices.create(

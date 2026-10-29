@@ -43,7 +43,7 @@ export default async function AdminPage() {
           <Kpi label="Invoiced pay-for-proof" value={`$${s.billed.toLocaleString()}`} />
           <Kpi label="Pay-for-proof accounts" value={String(s.performance)} sub={`${founding.left} founding spots left`} />
           <Kpi label="Flat-fee subscriptions" value={String(s.paying)} />
-          <Kpi label="Leads" value={String(s.leads)} />
+          <Kpi label="Leads" value={String(s.leads)} sub={`${s.referred} referred sign-ups · ${s.referralWins} proven`} />
         </section>
 
         <section className="mt-8 rounded-lg border p-5" style={{ borderColor: OS.line2, background: OS.panel }}>

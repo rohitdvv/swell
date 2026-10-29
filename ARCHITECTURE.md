@@ -321,6 +321,8 @@ or per IP, per window.
 | `/api/audit` | POST | public | 12/h/IP | free audit: find-money or check-a-campaign; export analysed in memory, never stored |
 | `/api/leads` | POST | public | 6/h/IP | "book a walkthrough" → `leads` (zod-validated) |
 | `/api/billing/founding` | GET | public | — | real founding-100 counter |
+| `/r/[code]` | GET | public | — | referral link: remembers the inviter (cookie), lands on /audit |
+| `/api/referrals` | GET | user | — | this account's referral link, results and credit balance |
 | `/admin` | page | `ADMIN_EMAILS` | — | founder dashboard: funnel, leads, newest sign-ups and campaigns (404 for others) |
 | `/api/assistant` | POST | viewer | per user + IP | guarded, grounded Q&A over one campaign |
 | `/api/health` | GET | public | 60/min/IP | database + LLM status, commit SHA (no secrets) |
@@ -401,6 +403,20 @@ before the stated start and calls `measureProof()` on the days after — the sam
 **Founding 100** (`src/lib/billing/founding.ts`): `withPerformanceRate()` stamps 10% on the first
 100 pay-for-proof subscriptions (15% after); `subscriptions.performance_rate` is locked by
 `COALESCE` on upsert, and `settleProof()` bills at the locked rate.
+
+## Referrals (`src/lib/billing/referrals.ts`)
+
+```
+/r/CODE ─▶ cookie swell_ref (90 days, httpOnly) ─▶ /audit?invited=1
+new account (getAccount, first sight) ─▶ users.referred_by = owner of CODE   (once; never self)
+Proof upload ─▶ proven AND ≥ 28 days measured? ─▶ referral_rewards (PK referred_email: once ever)
+                                                ─▶ credits +$100 referrer, +$100 referred
+settleProof ─▶ applyCredit(): ledger debit ref "apply:<campaign>" (idempotent) ─▶ net fee or "credited"
+```
+
+The reward is tied to a *proven result*, not a sign-up, so fake accounts earn nothing.
+`credits` is an append-only ledger keyed by `ref`, so every entry is idempotent. Tested in
+`test/referrals.test.ts`.
 
 ## Accuracy record (`/accuracy`, `src/lib/evidence.ts`)
 

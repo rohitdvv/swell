@@ -67,7 +67,7 @@ NYC trattoria export is parsed live and turned into a full campaign. No CSV or L
 | Script | Does |
 |---|---|
 | `npm run dev` | dev server with embedded Postgres (PGlite in `~/.swell`) |
-| `npm test` | 165 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
+| `npm test` | 172 Vitest tests — forecast calibration, SSRF, authz, AI guardrails, ingest, poster fonts, plan quotas, Proof, value |
 | `npm run typecheck` · `npm run lint` · `npm run build` | what CI runs on every push |
 
 ---
@@ -294,6 +294,11 @@ wastes on quiet days — owner-adjustable sales-per-labor-hour, wage and minimum
 $1,500 a month, invoiced once a campaign has fully run. No lift, no bill. **Founding 100**: the first
 hundred accounts keep 10% for life (real counter, rate locked in the DB). See ARCHITECTURE.md.
 
+**Referrals — "Give $100, get $100, when their register proves it."** Every account has a link
+(`/r/CODE`, shown on /account and after a proven result). A restaurant that signs up through it
+is attributed on account creation; the reward unlocks only when *its own* register proves a full
+campaign — then both sides get $100 credit, applied automatically to pay-for-proof fees.
+
 ## How accurate is the forecast?
 
 No forecast of a restaurant's sales is 100% accurate — weather, a local event or a viral post
@@ -429,6 +434,6 @@ test/
   model.test.ts security.test.ts ai-guardrails.test.ts ingest.test.ts poster-fonts.test.ts
   quota.test.ts proof.test.ts value.test.ts toast-export.test.ts geo.test.ts
   staffing.test.ts performance.test.ts settle.test.ts evidence.test.ts helpers/synthetic.ts
-  audit.test.ts growth.test.ts
+  audit.test.ts growth.test.ts referrals.test.ts
 assets/fonts/                   Geist TTFs for server-rendered posters (SIL OFL)
 ```

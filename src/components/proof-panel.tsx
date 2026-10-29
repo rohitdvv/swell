@@ -6,6 +6,7 @@ import { Card } from "@/components/ui";
 import { toast } from "@/components/toaster";
 import type { ProofReport } from "@/lib/proof";
 import { compressForUpload } from "@/lib/compress-upload";
+import { ReferralCard } from "@/components/referral-card";
 import { formatCompactCurrency, formatShortDate } from "@/lib/utils";
 
 const VERDICT: Record<ProofReport["verdict"], { title: string; body: string; tone: string }> = {
@@ -218,6 +219,8 @@ export function ProofPanel({
           </div>
         </Card>
       )}
+
+      {editable && proof.verdict === "proven" && <ReferralCard compact />}
 
       <div className="flex flex-wrap items-center gap-3">
         {uploader}

@@ -204,6 +204,25 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
       count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (key, window_start)
     )`);
+  // Referrals: one reward per referred restaurant, ever (PK), earned only
+  // when that restaurant's own register proves a campaign worked.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS referral_rewards (
+      referred_email TEXT PRIMARY KEY,
+      referrer_email TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      campaign_id TEXT,
+      created_at TEXT NOT NULL
+    )`);
+  // Credit ledger: + earned, − applied. `ref` makes every entry idempotent.
+  await exec(`
+    CREATE TABLE IF NOT EXISTS credits (
+      ref TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`);
   // Owners who asked to talk — founder-led sales starts here.
   await exec(`
     CREATE TABLE IF NOT EXISTS leads (
@@ -272,6 +291,8 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     ["campaigns", "owner_email TEXT"],
     ["campaigns", "proof_json TEXT"],
     ["subscriptions", "performance_rate REAL"],
+    ["users", "referral_code TEXT"],
+    ["users", "referred_by TEXT"],
   ];
   for (const [table, col] of cols) {
     try {
@@ -289,6 +310,9 @@ async function init(client: Client, kind: Backend["kind"]): Promise<void> {
     FROM campaign_runs r
     WHERE c.owner_email IS NULL AND r.campaign_id = c.id AND r.email IS NOT NULL`);
   await exec(`CREATE INDEX IF NOT EXISTS idx_campaigns_owner ON campaigns(owner_email, created_at)`);
+  await exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code)`);
+  await exec(`CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)`);
+  await exec(`CREATE INDEX IF NOT EXISTS idx_credits_email ON credits(email)`);
   void kind;
 }
 
@@ -352,7 +376,7 @@ export type PerformanceCharge = {
   rate: number;
   amount: number;
   /** estimate → (campaign still running) · invoiced / demo → final · none → not proven */
-  status: "estimate" | "invoiced" | "demo" | "none" | "failed";
+  status: "estimate" | "invoiced" | "demo" | "credited" | "none" | "failed";
   stripe_invoice_id: string | null;
   reason: string;
   created_at: string;
@@ -561,7 +585,7 @@ export const repo = {
   async adminStats() {
     const n = async (sql: string, params: unknown[] = []) => num((await one(sql, params))?.c);
     const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
-    const [users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed] =
+    const [users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed, referred, referralWins] =
       await Promise.all([
         n(`SELECT COUNT(*) c FROM users`),
         n(`SELECT COUNT(*) c FROM users WHERE created_at >= $1`, [weekAgo]),
@@ -574,6 +598,8 @@ export const repo = {
         n(`SELECT COUNT(*) c FROM subscriptions WHERE status IN ('active','trialing') AND plan = 'performance'`),
         n(`SELECT COUNT(*) c FROM leads`),
         n(`SELECT COALESCE(SUM(amount),0) c FROM performance_charges WHERE status = 'invoiced'`),
+        n(`SELECT COUNT(*) c FROM users WHERE referred_by IS NOT NULL`),
+        n(`SELECT COUNT(*) c FROM referral_rewards`),
       ]);
     const recentUsers = await q(`SELECT email, name, created_at FROM users ORDER BY created_at DESC LIMIT 15`);
     const recentCampaigns = await q(
@@ -581,7 +607,7 @@ export const repo = {
          FROM campaigns WHERE slug <> 'demo' ORDER BY created_at DESC LIMIT 15`
     );
     return {
-      users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed,
+      users, usersWeek, campaigns, campaignsWeek, published, proofs, proven, paying, performance, leads, billed, referred, referralWins,
       recentUsers: recentUsers.map((r) => ({ email: r.email as string, name: r.name as string, created_at: r.created_at as string })),
       recentCampaigns: recentCampaigns.map((r) => ({
         slug: r.slug as string,
@@ -592,6 +618,86 @@ export const repo = {
         hasProof: !!r.has_proof,
       })),
     };
+  },
+
+  // ---- referrals + credits ----
+  /** The account's referral code, created on first request. */
+  async ensureReferralCode(email: string): Promise<string> {
+    const row = await one(`SELECT referral_code FROM users WHERE email=$1`, [email]);
+    if (row?.referral_code) return row.referral_code as string;
+    const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o/1/l/i — read aloud safely
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const bytes = randomUUID().replace(/-/g, "");
+      let code = "";
+      for (let i = 0; i < 7; i++) code += alphabet[parseInt(bytes.slice(i * 2, i * 2 + 2), 16) % alphabet.length];
+      try {
+        await q(`UPDATE users SET referral_code=$2 WHERE email=$1 AND referral_code IS NULL`, [email, code]);
+        const check = await one(`SELECT referral_code FROM users WHERE email=$1`, [email]);
+        if (check?.referral_code) return check.referral_code as string;
+      } catch {
+        /* unique collision — try another code */
+      }
+    }
+    throw new Error("Could not allocate a referral code.");
+  },
+
+  async userByReferralCode(code: string): Promise<string | null> {
+    const row = await one(`SELECT email FROM users WHERE referral_code=$1`, [code.toLowerCase()]);
+    return (row?.email as string) ?? null;
+  },
+
+  /** Attribute a new account to its referrer — once, never to itself. */
+  async setReferredBy(email: string, referrer: string): Promise<void> {
+    if (email === referrer) return;
+    await q(`UPDATE users SET referred_by=$2 WHERE email=$1 AND referred_by IS NULL`, [email, referrer]);
+  },
+
+  async referrerOf(email: string): Promise<string | null> {
+    const row = await one(`SELECT referred_by FROM users WHERE email=$1`, [email]);
+    return (row?.referred_by as string) ?? null;
+  },
+
+  async referralStats(email: string): Promise<{ signedUp: number; proven: number; earned: number }> {
+    const a = await one(`SELECT COUNT(*) c FROM users WHERE referred_by=$1`, [email]);
+    const b = await one(`SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM referral_rewards WHERE referrer_email=$1`, [email]);
+    return { signedUp: num(a?.c), proven: num(b?.c), earned: num(b?.s) };
+  },
+
+  /**
+   * Record a referral reward and credit both sides. Idempotent: a referred
+   * restaurant can only ever trigger one reward. Returns true if this call earned it.
+   */
+  async rewardReferral(referred: string, referrer: string, amount: number, campaignId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const inserted = await q(
+      `INSERT INTO referral_rewards (referred_email, referrer_email, amount, campaign_id, created_at)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (referred_email) DO NOTHING RETURNING referred_email`,
+      [referred, referrer, amount, campaignId, now]
+    );
+    if (!inserted.length) return false;
+    await this.addCredit(referrer, amount, `Referral: ${referred} proved a campaign`, `referral-referrer:${referred}`);
+    await this.addCredit(referred, amount, "Welcome credit: joined through a referral", `referral-referred:${referred}`);
+    return true;
+  },
+
+  async addCredit(email: string, amount: number, reason: string, ref: string): Promise<boolean> {
+    const r = await q(
+      `INSERT INTO credits (ref, email, amount, reason, created_at) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (ref) DO NOTHING RETURNING ref`,
+      [ref, email, amount, reason, new Date().toISOString()]
+    );
+    return r.length > 0;
+  },
+
+  async creditBalance(email: string): Promise<number> {
+    const r = await one(`SELECT COALESCE(SUM(amount),0) c FROM credits WHERE email=$1`, [email]);
+    return num(r?.c);
+  },
+
+  /** Credit already applied to a campaign's fee (positive dollars), if any. */
+  async creditApplied(email: string, campaignId: string): Promise<number> {
+    const r = await one(`SELECT amount FROM credits WHERE ref=$1 AND email=$2`, [`apply:${campaignId}`, email]);
+    return r ? -num(r.amount) : 0;
   },
 
   // ---- leads ----
@@ -650,7 +756,7 @@ export const repo = {
        ON CONFLICT (campaign_id) DO UPDATE SET
          basis=EXCLUDED.basis, rate=EXCLUDED.rate, amount=EXCLUDED.amount, status=EXCLUDED.status,
          stripe_invoice_id=EXCLUDED.stripe_invoice_id, reason=EXCLUDED.reason, updated_at=EXCLUDED.updated_at
-       WHERE performance_charges.status NOT IN ('invoiced','demo')`,
+       WHERE performance_charges.status NOT IN ('invoiced','demo','credited')`,
       [c.campaign_id, c.email, c.slug, c.restaurant_name, c.basis, c.rate, c.amount, c.status, c.stripe_invoice_id, c.reason, now]
     );
     return (await this.getCharge(c.campaign_id))!;

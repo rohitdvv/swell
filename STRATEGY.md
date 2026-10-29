@@ -40,6 +40,7 @@ yes. The proof engine is the product; campaigns, posters and staffing are what w
 | **Founding 100**: 10% for life, live counter of real spots | ✅ | *Musk*: urgency — but only real urgency. |
 | **Public accuracy record** recomputed in CI (`/accuracy`) | ✅ (earlier) | Trust is the moat for a referee. |
 | **Founder dashboard + lead capture** (`/admin`, "book a walkthrough") | ✅ | *Bezos*: metrics; *every founder*: do things that don't scale — call the first 100 owners. |
+| **Referral loop**: give $100, get $100 — earned only when the referred register proves a campaign | ✅ | *Bezos*: a flywheel where every proven result recruits the next restaurant; paying for results, not sign-ups, keeps it honest. |
 
 ## The model
 
@@ -59,7 +60,6 @@ Anchor: a POS vendor's AI marketing add-on lists at $499/month whether it works 
    offer Proof reports to them.
 4. **Remove the CSV**: Square's Orders API is open to third-party apps via OAuth — build
    "Connect Square" so Proof runs every month with no upload. Toast partner application in parallel.
-5. **Referral loop**: a waived fee for every referred restaurant that gets a proven result.
 
 ## Metrics that matter
 

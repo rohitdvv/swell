@@ -9,7 +9,8 @@ export const metadata: Metadata = {
     "Upload a Toast, Square or Clover export. In about a minute: the labor and slow-hour profit you're leaving on the table, and whether your marketing actually worked. No sign-up, nothing stored.",
 };
 
-export default function AuditPage() {
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ invited?: string }> }) {
+  const invited = (await searchParams).invited === "1";
   return (
     <div className={osClass("min-h-screen")} style={{ background: OS.bg }}>
       <OsNav
@@ -20,6 +21,17 @@ export default function AuditPage() {
         ]}
       />
       <main className="mx-auto max-w-[1040px] px-5 pb-24 pt-12 sm:px-10">
+        {invited && (
+          <div
+            className="mb-8 rounded-lg border px-4 py-3 text-[14px]"
+            style={{ borderColor: OS.mint, background: "rgba(22,120,77,0.06)" }}
+          >
+            <strong>A fellow restaurant owner invited you.</strong>{" "}
+            <span style={{ color: OS.muted }}>
+              When Swell&apos;s first campaign is proven on your register, you both get $100 off.
+            </span>
+          </div>
+        )}
         <div className="font-mono text-[11px] uppercase tracking-[0.22em]" style={{ color: OS.amber }}>
           Free audit · no sign-up · nothing stored
         </div>

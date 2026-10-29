@@ -124,6 +124,7 @@ export const PLANS: Record<PlanId, Plan> = {
       "Capped at $1,500 a month per account",
       "Nothing billed for 'promising', 'no lift' or 'too early'",
       "Up to 3 restaurants, unlimited campaigns, Ad Kit",
+      "Refer an owner: you both get $100 off when their register proves it",
     ],
     priceIds: {},
     performance: { rate: 0.15, monthlyCap: 1500 },

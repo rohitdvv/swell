@@ -8,6 +8,7 @@ import { getAccountEmail } from "@/lib/billing/account";
 import { rateLimit } from "@/lib/rate-limit";
 import { readUpload, MAX_UPLOAD_BYTES, ALLOWED_EXT, UploadTooLargeError } from "@/lib/upload";
 import { settleProof } from "@/lib/billing/settle";
+import { rewardReferralIfEarned } from "@/lib/billing/referrals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,10 +79,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       );
     }
     await repo.setProof(campaign!.id, report);
+    // A proven, completed campaign unlocks the referral reward for both sides —
+    // before settling, so the new restaurant's own credit applies to this fee.
+    const referralEarned = await rewardReferralIfEarned(email, report, campaign!.id);
     // Pay-for-proof accounts: estimate, or invoice once the campaign has fully run.
     const charge = await settleProof(campaign!, report, email);
     return NextResponse.json({
       proof: report,
+      referralEarned,
       charge: charge && { amount: charge.amount, status: charge.status, reason: charge.reason },
     });
   } catch (err) {

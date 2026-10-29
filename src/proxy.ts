@@ -11,6 +11,7 @@ const isProtectedRoute = createRouteMatcher([
   "/console(.*)",
   "/account(.*)",
   "/admin(.*)",
+  "/api/referrals(.*)",
   "/api/generate(.*)",
   "/api/runs(.*)",
   "/api/parse-csv(.*)",
