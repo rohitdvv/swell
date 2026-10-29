@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The iOS app has its own toolchain (mobile/: Expo lint + tsc).
+    "mobile/**",
   ]),
   {
     rules: {

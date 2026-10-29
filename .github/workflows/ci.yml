@@ -32,3 +32,28 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  mobile:
+    # The iOS app (mobile/): typecheck, lint, and a full production iOS
+    # JavaScript bundle — catches broken imports without Xcode.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npx expo lint
+      - name: Bundle for iOS
+        run: npx expo export --platform ios --output-dir /tmp/ios-export
+        env:
+          EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci-placeholder
+

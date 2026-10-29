@@ -8,6 +8,10 @@ restaurant's own register what it earned**, and checks *any* campaign (a POS ven
 an agency, a flyer) the same way. Owners pay only when the result is proven.
 See **[STRATEGY.md](STRATEGY.md)** for the market and the model.
 
+📱 **iOS app** in [`mobile/`](mobile/README.md) — Expo / React Native, same backend: today's
+special with one-tap posting and daily reminders, the free audit, campaigns and Proof, account
+deletion. App Store submission kit: [APP_STORE.md](APP_STORE.md).
+
 ### 🔗 Live: **[swell-ten-theta.vercel.app](https://swell-ten-theta.vercel.app)** · [Free audit](https://swell-ten-theta.vercel.app/audit) (no sign-up) · [Demo campaign](https://swell-ten-theta.vercel.app/demo) · [Accuracy record](https://swell-ten-theta.vercel.app/accuracy) · [Status](https://swell-ten-theta.vercel.app/api/health)
 
 [![CI](https://github.com/rohitdvv/swell/actions/workflows/ci.yml/badge.svg)](https://github.com/rohitdvv/swell/actions/workflows/ci.yml)
